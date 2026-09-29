@@ -1,50 +1,88 @@
 #!/usr/bin/env python3
-"""Evaluator gate. Runs every acceptance criterion's verify command.
+"""Evaluator gate: runs every acceptance criterion in product/ACCEPTANCE_CRITERIA.md.
 
-Ratchet rule:
-  status "done"    -> MUST pass (regression = hard fail)
-  status "todo"    -> reported only (unless --strict)
-  status "deferred"-> skipped
---strict: every non-deferred criterion must pass. That is the DONE condition.
+Ratchet:
+  done     -> must pass (regression = exit 1)
+  todo     -> reported; fails only with --strict
+  deferred -> skipped
+  blocked  -> skipped, listed
+--strict: every todo/done criterion must pass. That is the product DONE condition.
+--list:   print table without running.
 """
-import json, os, subprocess, sys, time
+import os, re, subprocess, sys, time
 
-PATH = os.environ.get("CRITERIA", "spec/acceptance-criteria.json")
-STRICT = "--strict" in sys.argv
+PATH = os.environ.get("AC_FILE", "product/ACCEPTANCE_CRITERIA.md")
+STRICT, LIST = "--strict" in sys.argv, "--list" in sys.argv
+# IDs already proven earlier in the same job (e.g. AC-000 = verify.sh), comma-separated
+SKIP = {x.strip() for x in os.environ.get("AC_SKIP", "").split(",") if x.strip()}
 
-data = json.load(open(PATH))
-rows, hard_fail, open_count = [], False, 0
 
-for c in data["criteria"]:
-    status = c.get("status", "todo")
-    if status == "deferred":
-        rows.append((c["id"], status, "SKIP", c["requirement"]))
+def parse(text):
+    m = re.search(r"<!-- AC-TABLE:START -->(.*?)<!-- AC-TABLE:END -->", text, re.S)
+    if not m:
+        sys.exit(f"{PATH}: AC-TABLE markers missing")
+    rows = []
+    for line in m.group(1).strip().splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 5 or cells[0] in ("ID", "") or set(cells[0]) <= set("-: "):
+            continue
+        ac_id, feature, crit, verify, status = cells[:5]
+        verify = verify.strip().strip("`").strip()
+        rows.append(dict(id=ac_id, feature=feature, crit=crit, verify=verify, status=status.lower()))
+    ids = [r["id"] for r in rows]
+    dup = {i for i in ids if ids.count(i) > 1}
+    if dup:
+        sys.exit(f"duplicate AC ids: {sorted(dup)}")
+    return rows
+
+
+rows = parse(open(PATH, encoding="utf-8").read())
+out, hard_fail, open_n = [], False, 0
+for r in rows:
+    st = r["status"]
+    if st not in ("todo", "done", "deferred", "blocked"):
+        print(f"::error::{r['id']} has invalid status '{st}'")
+        hard_fail = True
+        continue
+    if r["id"] in SKIP and st == "done":
+        out.append((r, "PASS"))
+        continue
+    if st in ("deferred", "blocked") or LIST:
+        out.append((r, "SKIP" if not LIST else "-"))
+        if st == "blocked" or (LIST and st == "todo"):
+            open_n += 1
+        continue
+    if not r["verify"]:
+        out.append((r, "NO-VERIFY"))
+        open_n += 1
+        hard_fail = hard_fail or st == "done" or STRICT
         continue
     t = time.time()
     try:
-        r = subprocess.run(c["verify"], shell=True, capture_output=True, text=True,
-                           timeout=c.get("timeout", 600))
-        ok = r.returncode == 0
-        tail = (r.stdout + r.stderr)[-800:]
+        p = subprocess.run(r["verify"], shell=True, capture_output=True, text=True, timeout=900)
+        ok, tail = p.returncode == 0, (p.stdout + p.stderr)[-1500:]
     except subprocess.TimeoutExpired:
-        ok, tail = False, "timeout"
-    result = "PASS" if ok else "FAIL"
-    rows.append((c["id"], status, result, c["requirement"]))
+        ok, tail = False, "timeout after 900s"
+    out.append((r, "PASS" if ok else "FAIL"))
     if not ok:
-        print(f"::group::{c['id']} FAIL ({time.time()-t:.0f}s)\n{tail}\n::endgroup::")
-        if status == "done" or STRICT:
+        print(f"::group::{r['id']} FAIL ({time.time()-t:.0f}s): {r['verify']}\n{tail}\n::endgroup::")
+        if st == "done":
+            print(f"::error::REGRESSION {r['id']} was done and now fails")
             hard_fail = True
-    if status != "done" or not ok:
-        open_count += 1
+        elif STRICT:
+            hard_fail = True
+    if st != "done" or not ok:
+        open_n += 1
 
-md = ["| id | status | result | requirement |", "|---|---|---|---|"]
-md += [f"| {i} | {s} | {r} | {q} |" for i, s, r, q in rows]
-passed = sum(1 for r in rows if r[2] == "PASS")
-md.append(f"\n**{passed}/{len(rows)} passing, {open_count} open.**")
-if open_count == 0 and not hard_fail:
-    md.append("\n## DONE: all acceptance criteria verified.")
-out = "\n".join(md)
-print(out)
+md = ["| ID | Feature | Status | Result | Criterion |", "|---|---|---|---|---|"]
+md += [f"| {r['id']} | {r['feature']} | {r['status']} | {res} | {r['crit']} |" for r, res in out]
+passed = sum(1 for _, res in out if res == "PASS")
+md.append(f"\n**{passed}/{len(out)} passing, {open_n} open.**")
+if not LIST and open_n == 0 and not hard_fail:
+    md.append("\n## DONE: every acceptance criterion verified.")
+report = "\n".join(md)
+print(report)
 if os.environ.get("GITHUB_STEP_SUMMARY"):
-    open(os.environ["GITHUB_STEP_SUMMARY"], "a").write(out + "\n")
+    with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+        f.write(report + "\n")
 sys.exit(1 if hard_fail else 0)
