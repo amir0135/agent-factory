@@ -1,0 +1,15 @@
+name: Feature request (plain language)
+description: Describe what you want. The planner turns it into specs, acceptance criteria and tasks.
+labels: [feature]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What do you want?
+      description: Plain words. Who uses it, what they can do, what "good" looks like. Rough is fine.
+    validations: { required: true }
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints or preferences (optional)
+      description: Stack, integrations, deadlines, things to avoid.

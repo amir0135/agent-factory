@@ -1,13 +1,21 @@
 Closes #
 
-## ACs covered
-- [ ] AC-xxx: <verify command> passes locally
+## Acceptance criteria
+| AC | Verify command | Result |
+|---|---|---|
+| AC- | `` | pass/fail |
 
-## What changed
--
+## Tasks completed
+- [ ] T0xx
 
-## Deviations from architecture (ADR link if any)
+## Validation
+- [ ] `bash scripts/verify.sh` green
+- [ ] `python3 scripts/check_acceptance.py` green
+- [ ] App run and journey exercised (UI/API changes)
+- [ ] `product/PROGRESS.md`, `tasks.md`, AC statuses updated
+
+## Not done / known gaps
 None
 
-## Known gaps / follow-ups
+## Decisions (ADR ids)
 None

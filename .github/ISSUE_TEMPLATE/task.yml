@@ -1,22 +1,31 @@
 name: Build task
-description: One unit of work for the Copilot builder
-title: "[AC-xxx] "
+description: One independently verifiable unit of work (normally created by the Backlog Dispatcher)
+title: "[NNN-USx] "
 labels: [agent-task]
 body:
   - type: textarea
-    id: goal
-    attributes: { label: Goal, description: "One paragraph: what exists when this is done." }
+    id: context
+    attributes: { label: CONTEXT, description: "Why this exists. Link spec / plan / parent issue." }
     validations: { required: true }
-  - type: input
+  - type: textarea
+    id: requirement
+    attributes: { label: REQUIREMENT, description: "What must be true when done. Task IDs from tasks.md (T0xx)." }
+    validations: { required: true }
+  - type: textarea
     id: acs
-    attributes: { label: Acceptance criteria IDs, placeholder: "AC-003, AC-004" }
+    attributes: { label: ACCEPTANCE CRITERIA, description: "AC IDs from product/ACCEPTANCE_CRITERIA.md" }
     validations: { required: true }
-  - type: textarea
-    id: scope
-    attributes: { label: In scope / out of scope }
-  - type: textarea
-    id: files
-    attributes: { label: Likely files, description: "Hints, not a cage." }
   - type: input
     id: deps
-    attributes: { label: Blocked by, placeholder: "#12" }
+    attributes: { label: DEPENDENCIES, placeholder: "#12, #13 or none" }
+  - type: textarea
+    id: files
+    attributes: { label: FILES/COMPONENTS LIKELY INVOLVED }
+  - type: textarea
+    id: verification
+    attributes:
+      label: VERIFICATION
+      value: |
+        - [ ] `bash scripts/verify.sh`
+        - [ ] `python3 scripts/check_acceptance.py`
+        - [ ] listed ACs flipped to done with passing verify commands

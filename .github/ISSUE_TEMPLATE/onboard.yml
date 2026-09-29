@@ -1,0 +1,10 @@
+name: Harness onboarding
+description: Adapt the autonomous harness to this existing repository (planner follows .github/harness/ONBOARDING.md)
+title: "Harness onboarding"
+labels: [onboard]
+body:
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything the planner should know?
+      description: Optional. Product context, what is fragile, what not to touch.
