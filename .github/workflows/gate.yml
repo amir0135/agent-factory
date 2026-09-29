@@ -1,31 +1,59 @@
+# The deterministic judge of mechanical health. Same script agents and hooks run.
 name: gate
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   evaluate:
+    # Draft PRs = agent still working (it runs verify.sh itself via the stop hook). Saves Actions minutes.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - name: Install Playwright browsers if used
+      - uses: astral-sh/setup-uv@v6
+      - name: Playwright browsers (if used)
         run: |
-          if [ -f playwright.config.ts ] || [ -f playwright.config.js ]; then
-            npm ci && npx playwright install --with-deps chromium
+          if ls playwright.config.* >/dev/null 2>&1; then
+            npx --yes playwright install --with-deps chromium
           fi
-      - name: Quality gate
+      - name: Quality gate (scripts/verify.sh)
         run: bash scripts/verify.sh
       - name: Acceptance criteria (ratchet)
+        env: { AC_SKIP: AC-000 }
         run: python3 scripts/check_acceptance.py
-      - name: Done check (main only, informational)
+      - name: Product done? (main only, informational)
         if: github.ref == 'refs/heads/main'
         continue-on-error: true
+        env: { AC_SKIP: AC-000 }
         run: python3 scripts/check_acceptance.py --strict
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-results
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+  secrets:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

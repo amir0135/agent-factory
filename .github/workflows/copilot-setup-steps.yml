@@ -1,4 +1,4 @@
-# Preinstalls deps in Copilot coding agent's sandbox so it can run the gate itself.
+# Prepares the Copilot cloud agent sandbox so agents can run the exact gate CI runs.
 name: Copilot Setup Steps
 on:
   workflow_dispatch:
@@ -9,6 +9,7 @@ on:
 jobs:
   copilot-setup-steps:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -17,8 +18,11 @@ jobs:
         with: { node-version: 22 }
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - name: Install deps
+      - uses: astral-sh/setup-uv@v6
+      - name: Make harness scripts executable
+        run: chmod +x scripts/*.sh scripts/*.py scripts/hooks/* .specify/scripts/bash/*.sh 2>/dev/null || true
+      - name: Install project dependencies
+        run: bash scripts/verify.sh --no-e2e >/dev/null 2>&1 || echo "verify not green yet; deps installed where possible"
+      - name: Playwright browsers (if used)
         run: |
-          if [ -f package.json ]; then npm ci; fi
-          if [ -f playwright.config.ts ] || [ -f playwright.config.js ]; then npx playwright install --with-deps chromium; fi
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if ls playwright.config.* >/dev/null 2>&1; then npx --yes playwright install --with-deps chromium; fi

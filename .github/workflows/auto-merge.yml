@@ -1,0 +1,49 @@
+# Replaces paid branch protection. Merges a PR ONLY when:
+#   1. it carries `eval:pass`, is not draft, has no conflicts
+#   2. `gate` succeeded on its exact head commit
+#   3. the PR Evaluator's latest verdict for that exact SHA is PASS
+# Disable any time: repo variable AUTO_MERGE=false.
+name: auto-merge
+on:
+  workflow_run:
+    workflows: ["PR Evaluator"]
+    types: [completed]
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+concurrency: { group: auto-merge, cancel-in-progress: false }
+jobs:
+  merge:
+    if: vars.AUTO_MERGE != 'false'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      AGENT_TOKEN: ${{ secrets.GH_AW_AGENT_TOKEN }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Merge verified PRs
+        run: |
+          set -uo pipefail
+          merged=0
+          for n in $(gh pr list -R "$REPO" --label eval:pass --state open --json number,isDraft --jq '.[]|select(.isDraft==false)|.number'); do
+            pr=$(gh pr view "$n" -R "$REPO" --json headRefOid,mergeable,comments)
+            sha=$(jq -r .headRefOid <<<"$pr")
+            gate=$(gh run list -R "$REPO" --workflow gate.yml --commit "$sha" --json conclusion,event --jq '[.[]|select(.event=="pull_request")][0].conclusion // "none"')
+            verdict=$(jq -r --arg s "Evaluated-SHA: $sha" '[.comments[]|select(.body|contains($s))]|last|.body // ""' <<<"$pr" | grep -m1 -oE 'VERDICT: (PASS|FAIL)' || true)
+            echo "#$n sha=$sha gate=$gate verdict=${verdict:-none} mergeable=$(jq -r .mergeable <<<"$pr")"
+            [ "$gate" = success ] && [ "$verdict" = "VERDICT: PASS" ] || continue
+            if [ "$(jq -r .mergeable <<<"$pr")" = CONFLICTING ]; then
+              [ -n "$AGENT_TOKEN" ] && GH_TOKEN=$AGENT_TOKEN gh pr comment "$n" -R "$REPO" --body "@copilot main has moved. Merge main into this branch, resolve conflicts, rerun \`bash scripts/verify.sh\`."
+              gh pr edit "$n" -R "$REPO" --remove-label eval:pass
+              continue
+            fi
+            if gh pr merge "$n" -R "$REPO" --squash --delete-branch; then merged=1; fi
+          done
+          if [ $merged = 1 ]; then
+            gh workflow run gate.yml -R "$REPO" --ref main || true
+            gh workflow run backlog-dispatcher.lock.yml -R "$REPO" || true
+          fi

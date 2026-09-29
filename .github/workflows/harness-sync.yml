@@ -1,0 +1,65 @@
+# Keeps generated harness parts in sync, so nobody has to run CLIs locally:
+#   - installs/refreshes spec-kit (Copilot skills) without touching the constitution
+#   - sets exec bits on scripts
+#   - compiles agentic workflows (.md -> .lock.yml)
+# Pushing workflow files needs a PAT with Workflows: write -> secret GH_AW_AGENT_TOKEN.
+name: harness-sync
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/*.md", ".github/workflows/harness-sync.yml"]
+  workflow_dispatch:
+    inputs:
+      refresh_speckit:
+        description: Re-run specify init (upgrade spec-kit)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  issues: write
+concurrency: { group: harness-sync, cancel-in-progress: false }
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_AW_AGENT_TOKEN || github.token }}
+      - uses: astral-sh/setup-uv@v6
+      - name: spec-kit
+        if: ${{ hashFiles('.specify/integration.json') == '' || inputs.refresh_speckit }}
+        run: |
+          cp .specify/memory/constitution.md /tmp/constitution.md 2>/dev/null || true
+          uvx --from specify-cli specify init --here --force --non-interactive --integration copilot --integration-options="--skills"
+          [ -f /tmp/constitution.md ] && cp /tmp/constitution.md .specify/memory/constitution.md
+      - name: Compile agentic workflows
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          gh extension install github/gh-aw
+          gh aw compile 2>&1 | tee /tmp/compile.log
+      - name: Exec bits
+        run: |
+          git add -A
+          for f in scripts/*.sh scripts/*.py scripts/hooks/* .specify/scripts/bash/*.sh; do
+            [ -f "$f" ] && git update-index --chmod=+x "$f"
+          done
+      - name: Commit
+        env: { HAS_PAT: "${{ secrets.GH_AW_AGENT_TOKEN != '' }}" }
+        run: |
+          git diff --cached --quiet && { echo "nothing to sync"; exit 0; }
+          if [ "$HAS_PAT" != true ] && git diff --cached --name-only | grep -q '^\.github/workflows/'; then
+            echo "::error::Add repo secret GH_AW_AGENT_TOKEN (fine-grained PAT incl. Workflows: write) so compiled workflows can be committed."
+            exit 1
+          fi
+          git config user.name "harness-sync[bot]"
+          git config user.email "harness-sync@users.noreply.github.com"
+          git commit -m "chore(harness): sync spec-kit, exec bits, compiled agentic workflows"
+          git push
+      - name: Report failure
+        if: failure()
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          body="harness-sync failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          $(tail -60 /tmp/compile.log 2>/dev/null)"
+          existing=$(gh issue list --state open --search 'in:title "harness-sync failed"' --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then gh issue comment "$existing" --body "$body"; else gh issue create --title "harness-sync failed" --body "$body"; fi
