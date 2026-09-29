@@ -1,0 +1,22 @@
+name: Build task
+description: One unit of work for the Copilot builder
+title: "[AC-xxx] "
+labels: [agent-task]
+body:
+  - type: textarea
+    id: goal
+    attributes: { label: Goal, description: "One paragraph: what exists when this is done." }
+    validations: { required: true }
+  - type: input
+    id: acs
+    attributes: { label: Acceptance criteria IDs, placeholder: "AC-003, AC-004" }
+    validations: { required: true }
+  - type: textarea
+    id: scope
+    attributes: { label: In scope / out of scope }
+  - type: textarea
+    id: files
+    attributes: { label: Likely files, description: "Hints, not a cage." }
+  - type: input
+    id: deps
+    attributes: { label: Blocked by, placeholder: "#12" }

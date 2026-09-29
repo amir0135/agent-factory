@@ -1,0 +1,31 @@
+name: gate
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Install Playwright browsers if used
+        run: |
+          if [ -f playwright.config.ts ] || [ -f playwright.config.js ]; then
+            npm ci && npx playwright install --with-deps chromium
+          fi
+      - name: Quality gate
+        run: bash scripts/verify.sh
+      - name: Acceptance criteria (ratchet)
+        run: python3 scripts/check_acceptance.py
+      - name: Done check (main only, informational)
+        if: github.ref == 'refs/heads/main'
+        continue-on-error: true
+        run: python3 scripts/check_acceptance.py --strict
