@@ -173,9 +173,12 @@ def main():
         # Reconcile issues linked to this PR when it opens or merges.
         data = graphql(
             "query($id:ID!){node(id:$id){... on PullRequest"
-            "{closingIssuesReferences(first:20){nodes{number}}}}}", id=item["node_id"],
+            "{closingIssuesReferences(first:20){nodes{number repository{nameWithOwner}}}}}}",
+            id=item["node_id"],
         )
         for issue in data["node"]["closingIssuesReferences"]["nodes"]:
+            if issue["repository"]["nameWithOwner"].lower() != f"{owner}/{repo}".lower():
+                continue
             detail = status.api(f"/repos/{owner}/{repo}/issues/{issue['number']}")
             sync_item(board, fields, existing, detail, linked_pr(detail))
 

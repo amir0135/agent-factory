@@ -3,7 +3,7 @@
 import os
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import mock_open, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import project_sync  # noqa: E402
@@ -65,6 +65,26 @@ class DraftConversion(unittest.TestCase):
         self.assertIn("convertProjectV2DraftIssueItemToIssue", gql.call_args.args[0])
         self.assertEqual(api.call_args.args[0], "/repos/owner/my-app/issues/42/labels")
         self.assertEqual(api.call_args.args[2]["labels"], ["change-request"])
+
+
+class PullRequestSync(unittest.TestCase):
+    def test_cross_repo_closing_issue_does_not_update_same_number_locally(self):
+        event = '{"pull_request":{"node_id":"pr-id","number":8,"state":"open"}}'
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/my-app",
+                                      "GITHUB_EVENT_NAME": "pull_request",
+                                      "GITHUB_EVENT_PATH": "/tmp/event.json"}), \
+             patch("builtins.open", mock_open(read_data=event)), \
+             patch.object(project_sync, "project", return_value={"id": "board", "fields": {"nodes": []}}), \
+             patch.object(project_sync, "items", return_value=[]), \
+             patch.object(project_sync, "sync_item") as sync, \
+             patch.object(project_sync, "graphql", return_value={
+                 "node": {"closingIssuesReferences": {"nodes": [
+                     {"number": 8, "repository": {"nameWithOwner": "owner/other-app"}}
+                 ]}}
+             }), patch.object(project_sync.status, "api") as api:
+            project_sync.main()
+        sync.assert_called_once()
+        api.assert_not_called()
 
 
 if __name__ == "__main__":
