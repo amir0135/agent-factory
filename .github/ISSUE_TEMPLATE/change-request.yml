@@ -1,0 +1,19 @@
+name: Change request
+description: Suggest a change to an existing app. The planner updates its existing spec.
+labels: [change-request]
+body:
+  - type: textarea
+    id: change
+    attributes:
+      label: What should change?
+      description: Describe the desired result in plain words.
+    validations: { required: true }
+  - type: textarea
+    id: why
+    attributes:
+      label: Why? (optional)
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options: [Now, Soon, Someday]

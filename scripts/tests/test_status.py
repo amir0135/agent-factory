@@ -6,6 +6,7 @@ Stdlib only, no network. Run directly or via scripts/verify.sh.
 import os
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import status  # noqa: E402
@@ -82,6 +83,14 @@ class Render(unittest.TestCase):
 
     def test_empty_states(self):
         self.assertIn("Nothing. 🎉", self.body())
+
+    def test_change_and_board_links(self):
+        with patch.object(status, "REPO", "owner/my-app"), patch.dict(
+            os.environ, {"FACTORY_PROJECT_NUMBER": "12"}
+        ):
+            body = self.body()
+        self.assertIn("https://github.com/owner/my-app/issues/new?template=change-request.yml", body)
+        self.assertIn("https://github.com/users/owner/projects/12", body)
 
 
 if __name__ == "__main__":

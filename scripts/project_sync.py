@@ -14,6 +14,8 @@ NOTE = "Set App to send this to the factory"
 
 def map_status(item, linked_open_pr=False):
     """First matching state wins; None means remove a not-planned item."""
+    if item.get("pull_request") and item.get("state") == "closed" and not item.get("merged_at"):
+        return None
     if item.get("state") == "closed" or item.get("closed_at"):
         if item.get("state_reason") == "not_planned":
             return None

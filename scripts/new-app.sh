@@ -40,9 +40,24 @@ gh api -X PUT "repos/$REPO/actions/permissions/workflow" \
   -f default_workflow_permissions=write -F can_approve_pull_request_reviews=true >/dev/null
 
 say "Labels"
-for l in feature onboard needs-replan agent-task bug blocked:human stuck regression eval:pass eval:fail product-done status; do
+for l in feature change-request onboard needs-replan agent-task bug blocked:human stuck regression eval:pass eval:fail product-done status; do
   gh label create "$l" -R "$REPO" --force >/dev/null
 done
+
+PROJECT_PAT=${FACTORY_PROJECT_TOKEN:-}
+if [ -z "$PROJECT_PAT" ] && command -v security >/dev/null; then
+  PROJECT_PAT=$(security find-generic-password -a "$USER" -s agent-factory-project-pat -w 2>/dev/null || true)
+fi
+if [ -n "$PROJECT_PAT" ]; then
+  say "Factory board and project sync token"
+  printf '%s' "$PROJECT_PAT" | gh secret set FACTORY_PROJECT_TOKEN -R "$REPO"
+  BOARD_SCRIPT=$(mktemp)
+  trap 'rm -f "$BOARD_SCRIPT"' EXIT
+  gh api "repos/$TEMPLATE/contents/scripts/factory-board.sh" --jq .content | base64 -d >"$BOARD_SCRIPT"
+  FACTORY_PROJECT_TOKEN="$PROJECT_PAT" bash "$BOARD_SCRIPT" "$REPO"
+else
+  echo "::warning::No agent-factory-project-pat in Keychain; run scripts/factory-board.sh and set FACTORY_PROJECT_TOKEN to enable board sync."
+fi
 
 say "harness-sync (spec-kit + compiled agentic workflows)"
 for i in $(seq 1 20); do gh workflow run harness-sync.yml -R "$REPO" >/dev/null 2>&1 && break; sleep 3; done
@@ -65,6 +80,6 @@ One click GitHub has no API for (Copilot's CI would otherwise wait for you):
   https://github.com/$REPO/settings  ->  Copilot > Cloud agent
   -> turn OFF "Require approval for workflow runs"
 
-Your overview: the pinned 📊 Status issue -> https://github.com/$REPO/issues
+Your overview: the 🏭 Factory board; per-app detail: pinned 📊 Status -> https://github.com/$REPO/issues
 Watch: https://github.com/$REPO/actions
 MSG

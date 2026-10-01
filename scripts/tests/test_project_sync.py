@@ -14,6 +14,7 @@ class StatusMapping(unittest.TestCase):
             ("completed", {"state": "closed", "state_reason": "completed",
                             "labels": [{"name": "stuck"}]}, False, STATUSES[6]),
             ("not planned", {"state": "closed", "state_reason": "not_planned"}, False, None),
+            ("closed unmerged PR", {"state": "closed", "pull_request": True}, False, None),
             ("merged", {"merged_at": "2026-01-01", "pull_request": True}, False, STATUSES[6]),
             ("blocked PR", {"pull_request": True, "labels": [{"name": "blocked:human"}]},
              False, STATUSES[5]),
