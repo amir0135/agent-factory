@@ -81,6 +81,8 @@ Hooks in `.github/hooks/` enforce part of this deterministically. Do not work ar
 
 Every implementation issue contains: CONTEXT, REQUIREMENT, ACCEPTANCE CRITERIA (AC IDs), DEPENDENCIES, FILES/COMPONENTS, VERIFICATION. Titles are `[NNN-USx] <summary>` for spec-kit stories or `[AC-xxx] <summary>` for single criteria. Search open and closed issues for the ID before creating one. Never create duplicates.
 
+For a `change-request`, the planner amends the existing feature spec and adds AC rows; create a new `specs/NNN-*` only when the request introduces a genuinely new capability.
+
 ## Agents
 
 | Agent | Job | Never |
