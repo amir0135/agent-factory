@@ -5,6 +5,16 @@ cd "$(dirname "$0")/.."
 RUN_CONFIG_FILE=${RUN_CONFIG_FILE:-product/RUN.md}
 EVAL_DIR=${EVAL_DIR:-/tmp/eval}
 mkdir -p "$EVAL_DIR"
+LOG_FILE="$EVAL_DIR/app.log"
+
+fail() {
+  printf '%s\n' "$1" | tee -a "$LOG_FILE" >&2
+  exit 1
+}
+
+if [[ ! -f "$RUN_CONFIG_FILE" ]]; then
+  fail "App run contract not found: $RUN_CONFIG_FILE"
+fi
 
 config_value() {
   awk -F= -v key="$1" '
@@ -29,16 +39,14 @@ if [[ "$SERVE_MODE" == "none" || -z "$SERVE_MODE" ]]; then
   exit 0
 fi
 if [[ "$SERVE_MODE" != "app" || -z "$SERVE_CMD" || -z "$SERVE_URL" ]]; then
-  echo "Invalid app run contract in $RUN_CONFIG_FILE (expected SERVE_MODE=app, SERVE_CMD, and SERVE_URL)." >&2
-  exit 1
+  fail "Invalid app run contract in $RUN_CONFIG_FILE (expected SERVE_MODE=app, SERVE_CMD, and SERVE_URL)."
 fi
 if [[ ! "$SERVE_URL" =~ ^http://(localhost|127\.0\.0\.1):[0-9]+$ ]]; then
-  echo "SERVE_URL must use a fixed port on localhost or 127.0.0.1: $SERVE_URL" >&2
-  exit 1
+  fail "SERVE_URL must use a fixed port on localhost or 127.0.0.1: $SERVE_URL"
 fi
 
-LOG_FILE="$EVAL_DIR/app.log"
 PID_FILE="$EVAL_DIR/app.pid"
+: >"$LOG_FILE"
 nohup bash -c "$SERVE_CMD" >"$LOG_FILE" 2>&1 </dev/null &
 echo "$!" >"$PID_FILE"
 
@@ -57,6 +65,7 @@ while (( SECONDS < deadline )); do
   sleep 1
 done
 
+printf 'App failed to become healthy at %s.\n' "$HEALTH_URL" >>"$LOG_FILE"
 echo "App failed to become healthy at $HEALTH_URL. Startup log tail:" >&2
 tail -60 "$LOG_FILE" >&2 2>/dev/null || true
 exit 1

@@ -43,8 +43,7 @@ See `product/ARCHITECTURE.md`.
 ## How to validate a change
 1. `bash scripts/verify.sh`
 2. `python3 scripts/check_acceptance.py`
-3. Start the app and exercise the changed journey (Playwright or curl) when UI/API behaviour changed.
-4. For UI/API changes, configure and use `bash scripts/serve.sh`, then run the affected AC Journeys with Playwright before marking the PR ready.
+3. For UI/API changes, use `bash scripts/serve.sh` and exercise the changed AC Journey (Playwright or curl); run the relevant journeys before marking the PR ready.
 
 ## Security constraints
 No secrets in code or logs. No `.env` reads. No prod access. No weakening auth or tests to go green. Full list in `AGENTS.md`.
