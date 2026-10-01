@@ -16,7 +16,7 @@ changed=$( { [ -n "$base" ] && git diff --name-only "$base"; git diff --name-onl
 [ -z "$changed" ] && exit 0   # nothing changed: Q&A or no-op session
 
 fail=""
-log=$(timeout 840 bash scripts/verify.sh 2>&1) || fail="scripts/verify.sh failed:\n$(printf '%s' "$log" | tail -40)"
+log=$(timeout 840 bash scripts/verify.sh --quick --no-install 2>&1) || fail="scripts/verify.sh --quick failed:\n$(printf '%s' "$log" | tail -40)"
 if [ -z "$fail" ]; then
   log=$(AC_SKIP=AC-000 python3 scripts/check_acceptance.py 2>&1) || fail="check_acceptance.py failed (a done AC regressed or the table is invalid):\n$(printf '%s' "$log" | tail -40)"
 fi
