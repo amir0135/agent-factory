@@ -43,7 +43,9 @@ def read(path):
 
 def progress_bar(done, total, width=10):
     """`done`/`total` as a fixed-width block bar, e.g. '███████░░░'."""
-    filled = 0 if total <= 0 else min(width, round(width * done / total))
+    if total <= 0 or done <= 0:
+        return "░" * width
+    filled = min(width, max(1, round(width * done / total)))  # any progress shows
     return "█" * filled + "░" * (width - filled)
 
 
@@ -122,14 +124,14 @@ def graphql(query, variables):
 def issues(**params):
     params.setdefault("state", "open")
     params.setdefault("per_page", 100)
-    q = "&".join(f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items())
+    q = urllib.parse.urlencode(params)
     return [i for i in api(f"/repos/{REPO}/issues?{q}") if "pull_request" not in i]
 
 
 def pulls(**params):
     params.setdefault("state", "open")
     params.setdefault("per_page", 50)
-    q = "&".join(f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items())
+    q = urllib.parse.urlencode(params)
     return api(f"/repos/{REPO}/pulls?{q}")
 
 

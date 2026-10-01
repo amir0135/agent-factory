@@ -33,6 +33,9 @@ class ProgressBar(unittest.TestCase):
     def test_no_criteria_is_empty_bar(self):
         self.assertEqual(status.progress_bar(0, 0), "░" * 10)
 
+    def test_any_progress_shows_a_block(self):
+        self.assertEqual(status.progress_bar(1, 30), "█" + "░" * 9)
+
     def test_never_overflows(self):
         self.assertEqual(status.progress_bar(99, 20), "█" * 10)
 
