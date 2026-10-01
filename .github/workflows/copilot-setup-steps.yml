@@ -20,7 +20,7 @@ jobs:
         with: { python-version: "3.12" }
       - uses: astral-sh/setup-uv@v6
       - name: Make harness scripts executable
-        run: chmod +x scripts/*.sh scripts/*.py scripts/hooks/* .specify/scripts/bash/*.sh 2>/dev/null || true
+        run: chmod +x scripts/*.sh scripts/*.py scripts/hooks/* scripts/ac/*.sh .specify/scripts/bash/*.sh 2>/dev/null || true
       - name: Install project dependencies
         run: bash scripts/verify.sh --no-e2e >/dev/null 2>&1 || echo "verify not green yet; deps installed where possible"
       - name: Playwright browsers (if used)

@@ -2,8 +2,7 @@
 name: Backlog Dispatcher
 description: Keeps the build loop moving. Turns spec-kit tasks and open acceptance criteria into deduplicated task issues, assigns ready work to the builder agent, routes stuck work to re-planning, and detects product completion.
 on:
-  schedule:
-    - cron: "23 */2 * * *"
+  schedule: every 2h
   workflow_dispatch:
   push:
     branches: [main]
@@ -30,7 +29,7 @@ safe-outputs:
     max: 3
     github-token: ${{ secrets.GH_AW_AGENT_TOKEN }}
   add-labels:
-    allowed: [needs-replan, blocked:human, product-done]
+    allowed: [agent-task, needs-replan, blocked:human, product-done]
     target: "*"
     max: 10
     github-token: ${{ secrets.GH_AW_AGENT_TOKEN }}
@@ -51,14 +50,16 @@ You are the scheduler of an autonomous build loop. Read `AGENTS.md` first. Be de
 ## 2. Create missing task issues (max 5 per run)
 Unit of work = one spec-kit phase or user story with unchecked tasks, e.g. title `[001-US1] Sign up and log in`, or `[001-SETUP] Project scaffold`, or `[001-FOUND] Foundations`. For a `todo` AC not covered by any spec task, title `[AC-001-07] <criterion>`.
 - DEDUPE: skip if ANY issue (open or closed, any state) already has that bracketed ID in its title. Skip if all its tasks are ticked.
-- Order: Setup, then Foundational, then stories by priority (P1 first).
+- Order and dependencies: the `Remaining` list in `product/PROGRESS.md` is authoritative. An issue depends on every open issue for items in earlier numbered groups; items in the same group can run in parallel. Otherwise: Setup, then Foundational, then stories by priority (P1 first).
+- Skip AC rows with status `blocked` or `deferred`.
 - Body sections exactly: `## CONTEXT` (link spec/plan/tasks files), `## REQUIREMENT` (the T0xx task lines), `## ACCEPTANCE CRITERIA` (AC IDs + verify commands), `## DEPENDENCIES` (issue numbers of earlier phases, or `none`), `## FILES/COMPONENTS LIKELY INVOLVED`, `## VERIFICATION` (`bash scripts/verify.sh`, `python3 scripts/check_acceptance.py`, ACs flipped to done).
 
 ## 3. Assign ready work to the builder (max 3 per run)
 An open `agent-task` issue is READY when: not assigned to Copilot, no open PR references it, no label `blocked:human` / `needs-replan` / `stuck`, and every issue in its DEPENDENCIES is closed.
 Concurrency cap: count open PRs authored by Copilot. Assign at most `3 - that count` issues (never negative). Oldest-first within priority order.
 
-## 4. Route stuck work
+## 4. Route stuck work and quality signals
+- An open issue labeled `regression` (e.g. from a nightly quality run) without `agent-task`: add `agent-task` so it gets built next. It outranks new feature work.
 - An open PR or issue labeled `stuck`, or an agent-task whose Copilot PR was closed unmerged: add `needs-replan` to the ISSUE (Feature Intake hands it to the planner). Comment one line saying why.
 - An issue whose blocker is genuinely external (credentials, product decision, billing, prod access) per `product/BLOCKERS.md`: add `blocked:human` if missing. Ordinary failures are never `blocked:human`.
 

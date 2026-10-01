@@ -2,11 +2,12 @@
 # The ONE quality gate. CI, hooks and agents all call this.
 # Auto-detects Node (npm/pnpm/yarn/bun) and Python (uv/poetry/pip).
 # Onboarding may replace detection with explicit commands; keep it one script.
-# Flags: --no-e2e (skip Playwright), --no-install
+# Flags: --quick (no build/e2e/audit), --no-e2e, --no-install
+# Agent sandboxes are firewalled: deps come from copilot-setup-steps, so installs are skipped when present.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-E2E=1; INSTALL=1
-for a in "$@"; do case $a in --no-e2e) E2E=0;; --no-install) INSTALL=0;; esac; done
+E2E=1; INSTALL=1; QUICK=0
+for a in "$@"; do case $a in --quick) QUICK=1; E2E=0;; --no-e2e) E2E=0;; --no-install) INSTALL=0;; esac; done
 step() { echo; echo "==> $*"; }
 ran=0
 
@@ -18,24 +19,24 @@ if [ -f package.json ]; then
   else PM=npm; INST=$([ -f package-lock.json ] && echo "npm ci" || echo "npm install"); fi
   has() { node -e "process.exit(require('./package.json').scripts?.['$1']?0:1)"; }
   run() { if has "$1"; then step "$PM run $1"; $PM run "$1"; fi; }
-  [ $INSTALL = 1 ] && { step "$INST"; $INST; }
+  if [ $INSTALL = 1 ] && [ ! -d node_modules ]; then step "$INST"; $INST; fi
   run lint
   if has format:check; then run format:check; elif has "format-check"; then run format-check; fi
   run typecheck
   if ! has typecheck && [ -f tsconfig.json ]; then step "tsc --noEmit"; npx --no-install tsc --noEmit; fi
   if has test:unit; then run test:unit; elif has test; then step "$PM test"; $PM test; fi
   run test:integration
-  run build
+  [ $QUICK = 0 ] && run build
   if [ $E2E = 1 ]; then
     if has test:e2e; then run test:e2e
     elif ls playwright.config.* >/dev/null 2>&1; then step "playwright test"; npx --no-install playwright test; fi
   fi
-  if [ "$PM" = npm ] && [ -f package-lock.json ]; then step "npm audit (critical)"; npm audit --omit=dev --audit-level=critical; fi
+  if [ $QUICK = 0 ] && [ "$PM" = npm ] && [ -f package-lock.json ]; then step "npm audit (critical)"; npm audit --omit=dev --audit-level=critical; fi
 fi
 
 if [ -f pyproject.toml ] || [ -f requirements.txt ]; then
   ran=1
-  if [ -f uv.lock ]; then PY="uv run"; [ $INSTALL = 1 ] && { step "uv sync"; uv sync --all-extras --dev; }
+  if [ -f uv.lock ]; then PY="uv run"; [ $INSTALL = 1 ] && [ ! -d .venv ] && { step "uv sync"; uv sync --all-extras --dev; }
   elif [ -f poetry.lock ]; then PY="poetry run"; [ $INSTALL = 1 ] && { step "poetry install"; poetry install; }
   else PY=""; if [ $INSTALL = 1 ]; then
     [ -f requirements.txt ] && { step "pip install -r requirements.txt"; pip install -q -r requirements.txt; }

@@ -49,12 +49,26 @@ Humans are pulled in only through `product/BLOCKERS.md` / `blocked:human` issues
 | `scripts/verify.sh` | THE quality gate: install, lint, format, types, unit, integration, build, E2E, audit |
 | `scripts/check_acceptance.py` | Runs every AC; `done` rows are regression-locked; `--strict` = product done |
 | `.github/workflows/gate.yml` | CI judge (skips drafts to save minutes) |
-| `.github/workflows/*.md` | Agentic workflows (gh-aw): Feature Intake, Backlog Dispatcher, CI Doctor, PR Evaluator, Spec Auditor |
+| `.github/workflows/*.md` | Agentic workflows (gh-aw): Feature Intake, Backlog Dispatcher, PR CI Doctor, PR Evaluator, Spec Auditor, plus upstream githubnext/agentics CI Failure Doctor and `/pr-fix` |
+| `scripts/new-app.sh` | One command to start a new app from this template |
 | `.github/workflows/auto-merge.yml` | Merge gate that replaces paid branch protection |
 | `.github/workflows/harness-sync.yml` | Installs spec-kit, compiles `.md` workflows to `.lock.yml`, fixes exec bits |
 | `.github/prompts/` | VS Code: `/idea` (plan something), `/continue` (keep building) |
 
-## Setup (once per repo)
+## Start a new app (one command)
+
+One-time, on your Mac:
+1. `gh auth login`
+2. Create a fine-grained PAT: Repository access **All repositories**; Actions, Contents, Issues, Pull requests, Workflows = **Read and write**. Store it: `security add-generic-password -a "$USER" -s agent-factory-pat -w` (paste when prompted).
+3. Install the command: `gh api repos/amir0135/agent-factory/contents/scripts/new-app.sh --jq .content | base64 -d | sudo tee /usr/local/bin/new-app >/dev/null && sudo chmod +x /usr/local/bin/new-app`
+
+Every new app:
+```
+new-app my-app "A booking tool for my yoga studio: members book classes, I see attendance"
+```
+It creates the repo from this template, sets the secret, Actions permissions and labels, runs harness-sync, and files your idea as a Feature request. The only manual step left is the one link it prints (Copilot workflow approval has no API).
+
+## Setup (manual, if not using new-app)
 
 1. **Secret** `GH_AW_AGENT_TOKEN`: fine-grained PAT, resource owner = you, only this repo. Repository permissions: Actions, Contents, Issues, Pull requests, Workflows = Read and write; Metadata = Read. Settings > Secrets and variables > Actions > New repository secret.
 2. **Copilot cloud agent** on for this repo: profile > Copilot settings > Cloud agent > Repository access.
