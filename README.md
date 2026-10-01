@@ -57,7 +57,7 @@ This creates the repo from this template, sets the secret, Actions permissions a
 
 ### 5. Watch your budget
 
-Every agent run costs **Copilot premium requests** and **Actions minutes**. On private repos the free-plan minute cap runs out fast with this loop. **Make app repos public when you can**: Actions minutes on public repos are free. The dispatcher caps parallel builders at 3.
+Every agent run costs **Copilot premium requests** and **Actions minutes**. The PR Evaluator's browser startup and journeys add Actions minutes, especially for large apps or many ACs. On private repos the free-plan minute cap runs out fast with this loop. **Make app repos public when you can**: Actions minutes on public repos are free. The dispatcher caps parallel builders at 3.
 
 ---
 
@@ -82,7 +82,7 @@ Every agent run costs **Copilot premium requests** and **Actions minutes**. On p
    PR ready ──> gate (verify.sh + AC ratchet + gitleaks)
           |           fail ──> CI Doctor: root cause ──> "@copilot fix ..." (max 3, then stuck)
           v pass
-   PR Evaluator (reviewer protocol, evidence only, stamps Evaluated-SHA)
+   PR Evaluator (runs the app, clicks through AC journeys, reviews diff, stamps Evaluated-SHA)
           |           FAIL ──> "@copilot" numbered fixes (max 3, then stuck ──> planner re-plans)
           v PASS
    auto-merge (gate green on exact SHA + PASS verdict) ──> Dispatcher runs again

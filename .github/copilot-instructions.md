@@ -23,6 +23,7 @@ See `product/ARCHITECTURE.md`.
 | Package manager | auto (detected from lockfile) |
 | Setup | auto |
 | Dev server / start app | auto |
+| App run contract | `product/RUN.md` (planner fills for UI/API apps; `SERVE_MODE=none` for libraries/CLIs) |
 | Lint | auto |
 | Format check | auto |
 | Type check | auto |
@@ -43,6 +44,7 @@ See `product/ARCHITECTURE.md`.
 1. `bash scripts/verify.sh`
 2. `python3 scripts/check_acceptance.py`
 3. Start the app and exercise the changed journey (Playwright or curl) when UI/API behaviour changed.
+4. For UI/API changes, configure and use `bash scripts/serve.sh`, then run the affected AC Journeys with Playwright before marking the PR ready.
 
 ## Security constraints
 No secrets in code or logs. No `.env` reads. No prod access. No weakening auth or tests to go green. Full list in `AGENTS.md`.

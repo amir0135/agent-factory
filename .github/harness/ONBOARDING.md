@@ -21,6 +21,8 @@ Run by the planner for a "Harness onboarding" issue. Goal: make this repo's harn
 - Update `copilot-setup-steps.yml` so the agent sandbox has every tool `verify.sh` needs.
 - `git update-index --chmod=+x scripts/*.sh scripts/hooks/* .specify/scripts/bash/*.sh`
 - Web app without E2E: add Playwright with ONE real critical journey test now; list the rest as tasks.
+- For every UI or HTTP API app, fill in `product/RUN.md` and make `scripts/serve.sh` start the app on a fixed loopback port and wait for its health endpoint. For libraries/CLIs without a local user-facing server, set `SERVE_MODE=none`.
+- Add a short user-language `Journey` column value to every user-facing AC in `product/ACCEPTANCE_CRITERIA.md`; leave it empty for non-journey criteria.
 
 ## 4. Capture the product as it is
 - `product/PRODUCT.md`: users, journeys, features, inferred from code, routes, UI and docs. Mark inferences `(inferred)`.
