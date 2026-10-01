@@ -19,3 +19,4 @@ planning
 
 ## Log
 <!-- - YYYY-MM-DD: one line -->
+- 2026-10-01: pinned "📊 Status" issue added (`.github/workflows/status.yml` + `scripts/status.py`); owner overview is now that issue, not this file.

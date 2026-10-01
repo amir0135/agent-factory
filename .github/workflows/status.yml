@@ -20,8 +20,11 @@ concurrency:
   cancel-in-progress: true
 jobs:
   update:
-    # Never react to the Status issue updating itself.
-    if: github.event_name != 'issues' || !contains(github.event.issue.labels.*.name, 'status')
+    # Never react to the Status issue updating itself. Fork PRs get a read-only
+    # token, so skip them rather than fail every time.
+    if: >-
+      (github.event_name != 'issues' || !contains(github.event.issue.labels.*.name, 'status')) &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

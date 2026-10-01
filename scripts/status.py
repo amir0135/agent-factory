@@ -111,7 +111,12 @@ def api(path, method="GET", payload=None):
 
 
 def graphql(query, variables):
-    return api(f"{API}/graphql", "POST", {"query": query, "variables": variables})
+    # GHES serves REST at /api/v3 and GraphQL at /api/graphql.
+    url = API[: -len("/api/v3")] + "/api/graphql" if API.endswith("/api/v3") else f"{API}/graphql"
+    out = api(url, "POST", {"query": query, "variables": variables})
+    if out.get("errors"):
+        raise RuntimeError(out["errors"][0].get("message", out["errors"]))
+    return out
 
 
 def issues(**params):
@@ -262,10 +267,22 @@ def find_issue():
     return None
 
 
-def pin(node_id):
+def is_pinned(number):
+    owner, name = REPO.split("/", 1)
+    q = "query($o:String!,$n:String!){repository(owner:$o,name:$n){pinnedIssues(first:3){nodes{issue{number}}}}}"
+    nodes = graphql(q, {"o": owner, "n": name})["data"]["repository"]["pinnedIssues"]["nodes"]
+    return any(n["issue"]["number"] == number for n in nodes)
+
+
+def pin(issue):
+    """Pin the issue unless it already is. Pinning is best effort: GitHub allows only 3."""
     try:
-        graphql("mutation($id:ID!){pinIssue(input:{issueId:$id}){issue{number}}}", {"id": node_id})
-    except (urllib.error.URLError, OSError) as e:  # already pinned / pin limit reached
+        if not is_pinned(issue["number"]):
+            graphql(
+                "mutation($id:ID!){pinIssue(input:{issueId:$id}){issue{number}}}",
+                {"id": issue["node_id"]},
+            )
+    except (urllib.error.URLError, OSError, RuntimeError, KeyError, TypeError) as e:
         print(f"note: could not pin the issue ({e})")
 
 
@@ -281,12 +298,13 @@ def main():
     existing = find_issue()
     if existing:
         api(f"/repos/{REPO}/issues/{existing['number']}", "PATCH", {"body": body, "state": "open"})
+        pin(existing)
         print(f"updated {existing['html_url']}")
         return
     created = api(
         f"/repos/{REPO}/issues", "POST", {"title": TITLE, "body": body, "labels": [LABEL]}
     )
-    pin(created["node_id"])
+    pin(created)
     print(f"created {created['html_url']}")
 
 
