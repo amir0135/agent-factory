@@ -22,45 +22,109 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      - name: Initialize log
+        id: initialize_log
+        run: |
+          : > /tmp/harness-sync.log
+          echo "=== Step: Initialize log ===" | tee -a /tmp/harness-sync.log
       - uses: actions/checkout@v4
+        id: checkout
         with:
           token: ${{ secrets.GH_AW_AGENT_TOKEN || github.token }}
       - uses: astral-sh/setup-uv@v6
+        id: setup_uv
       - name: spec-kit
+        id: spec_kit
         if: ${{ hashFiles('.specify/integration.json') == '' || inputs.refresh_speckit }}
         run: |
+          exec > >(tee -a /tmp/harness-sync.log) 2>&1
+          echo "=== Step: spec-kit ==="
           cp .specify/memory/constitution.md /tmp/constitution.md 2>/dev/null || true
           uvx --from specify-cli specify init --here --force --non-interactive --integration copilot --integration-options="--skills"
           [ -f /tmp/constitution.md ] && cp /tmp/constitution.md .specify/memory/constitution.md
       - name: Compile agentic workflows
+        id: compile
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
+          exec > >(tee -a /tmp/harness-sync.log) 2>&1
+          echo "=== Step: Compile agentic workflows ==="
           set -o pipefail
           gh extension install github/gh-aw
-          gh aw compile 2>&1 | tee /tmp/compile.log
+          gh aw compile
       - name: Exec bits
+        id: exec_bits
         run: |
+          exec > >(tee -a /tmp/harness-sync.log) 2>&1
+          echo "=== Step: Exec bits ==="
           git add -A
           for f in scripts/*.sh scripts/*.py scripts/hooks/* scripts/ac/*.sh .specify/scripts/bash/*.sh; do
             [ -f "$f" ] && git update-index --chmod=+x "$f"
           done
       - name: Commit
+        id: commit
         env: { HAS_PAT: "${{ secrets.GH_AW_AGENT_TOKEN != '' }}" }
         run: |
+          exec > >(tee -a /tmp/harness-sync.log) 2>&1
+          echo "=== Step: Commit ==="
           git diff --cached --quiet && { echo "nothing to sync"; exit 0; }
           if [ "$HAS_PAT" != true ] && git diff --cached --name-only | grep -q '^\.github/workflows/'; then
-            echo "::error::Add repo secret GH_AW_AGENT_TOKEN (fine-grained PAT incl. Workflows: write) so compiled workflows can be committed."
+            echo "OWNER_ACTION=Add the repo secret GH_AW_AGENT_TOKEN using a fine-grained PAT with Contents: write and Workflows: write." >> "$GITHUB_ENV"
+            echo "::error::Add the repo secret GH_AW_AGENT_TOKEN using a fine-grained PAT with Contents: write and Workflows: write."
             exit 1
           fi
           git config user.name "harness-sync[bot]"
           git config user.email "harness-sync@users.noreply.github.com"
           git commit -m "chore(harness): sync spec-kit, exec bits, compiled agentic workflows"
-          git push
-      - name: Report failure
-        if: failure()
+          for attempt in 1 2 3; do
+            echo "Push attempt $attempt of 3"
+            if git pull --rebase origin main && git push origin HEAD:main; then
+              exit 0
+            fi
+            git rebase --abort || true
+            [ "$attempt" -eq 3 ] || sleep "$((attempt * 2))"
+          done
+          echo "::error::Could not push harness changes after 3 attempts."
+          exit 1
+      - name: Close issue after successful sync
+        id: close_issue
+        if: success()
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
-          body="harness-sync failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          $(tail -60 /tmp/compile.log 2>/dev/null)"
+          exec > >(tee -a /tmp/harness-sync.log) 2>&1
           existing=$(gh issue list --state open --search 'in:title "harness-sync failed"' --json number --jq '.[0].number')
-          if [ -n "$existing" ]; then gh issue comment "$existing" --body "$body"; else gh issue create --title "harness-sync failed" --body "$body"; fi
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" --comment "harness-sync succeeded: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+      - name: Report failure
+        if: failure()
+        id: report_failure
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          exec > >(tee -a /tmp/harness-sync.log) 2>&1
+          failed_step="unknown"
+          [ "${{ steps.initialize_log.outcome }}" = failure ] && failed_step="Initialize log"
+          [ "${{ steps.checkout.outcome }}" = failure ] && failed_step="Checkout"
+          [ "${{ steps.setup_uv.outcome }}" = failure ] && failed_step="Set up uv"
+          [ "${{ steps.spec_kit.outcome }}" = failure ] && failed_step="spec-kit"
+          [ "${{ steps.compile.outcome }}" = failure ] && failed_step="Compile agentic workflows"
+          [ "${{ steps.exec_bits.outcome }}" = failure ] && failed_step="Exec bits"
+          [ "${{ steps.commit.outcome }}" = failure ] && failed_step="Commit"
+          [ "${{ steps.close_issue.outcome }}" = failure ] && failed_step="Close issue after successful sync"
+          body=$(printf 'harness-sync failed: %s/%s/actions/runs/%s\n\nFailed step: %s\n' \
+            "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}" "$failed_step")
+          if [ -n "${OWNER_ACTION:-}" ]; then
+            body=$(printf '%s\nOwner action: %s\n' "$body" "$OWNER_ACTION")
+            gh label create blocked:human --color B60205 --description "Requires action from a human" 2>/dev/null || true
+          fi
+          body=$(printf '%s\n\nLast 60 lines of /tmp/harness-sync.log:\n```\n%s\n```' \
+            "$body" "$(tail -60 /tmp/harness-sync.log 2>/dev/null || true)")
+          existing=$(gh issue list --state open --search 'in:title "harness-sync failed"' --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            issue_url=$(gh issue create --title "harness-sync failed" --body "$body")
+            existing=${issue_url##*/}
+          fi
+          if [ -n "${OWNER_ACTION:-}" ]; then
+            gh issue edit "$existing" --add-label blocked:human
+          fi
