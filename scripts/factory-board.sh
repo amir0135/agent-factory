@@ -19,16 +19,21 @@ if [ -n "$REPO" ] && [[ "$REPO" != "$OWNER/"* ]]; then
 fi
 
 gql() {
-  local query=$1 variables=${2:-'{}'}
-  jq -nc --arg q "$query" --argjson v "$variables" '{query:$q,variables:$v}' |
-    gh api graphql --input -
+  local query=$1 variables=${2:-'{}'} response
+  response=$(jq -nc --arg q "$query" --argjson v "$variables" '{query:$q,variables:$v}' |
+    gh api graphql --input -)
+  if ! jq -e '(.errors // []) | length == 0' >/dev/null <<<"$response"; then
+    jq -r '.errors[].message' <<<"$response" >&2
+    return 1
+  fi
+  printf '%s\n' "$response"
 }
-project_query='query($owner:String!){user(login:$owner){id projectsV2(first:100){nodes{id number title url readme fields(first:100){nodes{... on ProjectV2SingleSelectField{id name options{id name color description}} ... on ProjectV2Field{id name}}}}}}}'
+project_query='query($owner:String!){user(login:$owner){id projectsV2(first:100){nodes{id number title url readme repositories(first:100){nodes{id}} views(first:100){nodes{id name filter}} fields(first:100){nodes{... on ProjectV2SingleSelectField{id name options{id name color description}} ... on ProjectV2Field{id name}}}}}}}'
 data=$(gql "$project_query" "$(jq -nc --arg owner "$OWNER" '{owner:$owner}')")
 owner_id=$(jq -r '.data.user.id' <<<"$data")
 project=$(jq -c '.data.user.projectsV2.nodes[] | select(.title == "🏭 Factory")' <<<"$data" | head -n 1)
 if [ -z "$project" ]; then
-  data=$(gql 'mutation($owner:ID!){createProjectV2(input:{ownerId:$owner,title:"🏭 Factory"}){projectV2{id number title url readme fields(first:100){nodes{... on ProjectV2SingleSelectField{id name options{id name color description}} ... on ProjectV2Field{id name}}}}}}}' \
+  data=$(gql 'mutation($owner:ID!){createProjectV2(input:{ownerId:$owner,title:"🏭 Factory"}){projectV2{id number title url readme repositories(first:100){nodes{id}} views(first:100){nodes{id name filter}} fields(first:100){nodes{... on ProjectV2SingleSelectField{id name options{id name color description}} ... on ProjectV2Field{id name}}}}}}}' \
     "$(jq -nc --arg owner "$owner_id" '{owner:$owner}')")
   project=$(jq -c '.data.createProjectV2.projectV2' <<<"$data")
 fi
@@ -69,13 +74,35 @@ app=${REPO#*/}
 app_options=$(jq -nc --arg app "$app" '[{name:$app,color:"BLUE",description:""}]')
 ensure_field App "$app_options"
 
+ensure_view() {
+  local name=$1 layout=$2 view view_id
+  view=$(jq -c --arg name "$name" '.views.nodes[] | select(.name == $name)' <<<"$project" | head -n 1)
+  if [ -z "$view" ]; then
+    view=$(gql 'mutation($p:ID!,$name:String!,$layout:ProjectV2ViewLayout!){createProjectV2View(input:{projectId:$p,name:$name,layout:$layout}){projectV2View{id}}}' \
+      "$(jq -nc --arg p "$id" --arg name "$name" --arg layout "$layout" '{p:$p,name:$name,layout:$layout}')" |
+      jq -c '.data.createProjectV2View.projectV2View')
+  fi
+  if [ "$name" = "Needs you" ]; then
+    view_id=$(jq -r .id <<<"$view")
+    gql 'mutation($id:ID!){updateProjectV2View(input:{viewId:$id,filter:"Status:\"🙋 Needs you\""}){projectV2View{id}}}' \
+      "$(jq -nc --arg id "$view_id" '{id:$id}')" >/dev/null
+  fi
+}
+ensure_view Board BOARD_LAYOUT
+ensure_view "By app" TABLE_LAYOUT
+ensure_view "Needs you" TABLE_LAYOUT
+
 if [ -n "$REPO" ]; then
   repo_id=$(gh api "repos/$REPO" --jq .node_id)
-  # Linking is idempotent: GitHub returns the existing link if already linked.
-  gql 'mutation($p:ID!,$r:ID!){linkProjectV2ToRepository(input:{projectId:$p,repositoryId:$r}){repository{id}}}' \
-    "$(jq -nc --arg p "$id" --arg r "$repo_id" '{p:$p,r:$r}')" >/dev/null
+  if ! jq -e --arg r "$repo_id" 'any(.repositories.nodes[]; .id == $r)' >/dev/null <<<"$project"; then
+    gql 'mutation($p:ID!,$r:ID!){linkProjectV2ToRepository(input:{projectId:$p,repositoryId:$r}){repository{id}}}' \
+      "$(jq -nc --arg p "$id" --arg r "$repo_id" '{p:$p,r:$r}')" >/dev/null
+  fi
   readme=$(jq -r '.readme // ""' <<<"$project")
-  link="[$REPO](https://github.com/$REPO/issues?q=is%3Aissue+label%3Astatus)"
+  status_url=$(gh api "repos/$REPO/issues?labels=status&state=all&per_page=100" \
+    --jq '.[] | select(.title == "📊 Status") | .html_url' | head -n 1)
+  status_url=${status_url:-https://github.com/$REPO/issues?q=is%3Aissue+label%3Astatus}
+  link="[$REPO]($status_url)"
   if [[ "$readme" != *"$link"* ]]; then
     readme="${readme:+$readme$'\n'}- $link — pinned 📊 Status issue"
     gql 'mutation($p:ID!,$readme:String!){updateProjectV2(input:{projectId:$p,readme:$readme}){projectV2{id}}}' \
@@ -84,4 +111,4 @@ if [ -n "$REPO" ]; then
   gh variable set FACTORY_PROJECT_NUMBER -R "$REPO" --body "$number"
 fi
 echo "Factory board: $url"
-echo "GitHub Projects API cannot create or configure views. In $url: (1) click + New view > Board and group by Status; (2) + New view > Table, name it By app, group by App; (3) + New view > Table, name it Needs you, filter Status:\"🙋 Needs you\"."
+echo "Views created. GitHub's API cannot set group-by or the default view: in $url (1) Board > View settings > Group by > Status, then set as default; (2) By app > View settings > Group by > App; (3) Needs you is already filtered to Status:\"🙋 Needs you\"."

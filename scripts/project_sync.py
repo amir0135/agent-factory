@@ -134,10 +134,18 @@ def convert_drafts(board, existing, owner):
         if repo["owner"]["login"].lower() != owner.lower():
             continue
         body = (draft.get("body") or "").replace(NOTE, "").strip()
-        status.api(f"/repos/{owner}/{app}/issues", "POST",
-                   {"title": draft["title"], "body": body, "labels": ["change-request"]})
-        graphql("mutation($p:ID!,$i:ID!){deleteProjectV2Item(input:{projectId:$p,"
-                "itemId:$i}){deletedItemId}}", p=board["id"], i=item["id"])
+        if body != (draft.get("body") or ""):
+            graphql("mutation($id:ID!,$body:String!){updateProjectV2DraftIssue("
+                    "input:{draftIssueId:$id,body:$body}){draftIssue{id}}}",
+                    id=draft["id"], body=body)
+        converted = graphql(
+            "mutation($item:ID!,$repo:ID!){convertProjectV2DraftIssueItemToIssue("
+            "input:{itemId:$item,repositoryId:$repo}){item{content{... on Issue{number}}}}}",
+            item=item["id"], repo=repo["node_id"],
+        )["convertProjectV2DraftIssueItemToIssue"]["item"]
+        number = converted["content"]["number"]
+        status.api(f"/repos/{owner}/{app}/issues/{number}/labels", "POST",
+                   {"labels": ["change-request"]})
 
 
 def main():

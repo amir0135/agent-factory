@@ -3,8 +3,10 @@
 import os
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import project_sync  # noqa: E402
 from project_sync import STATUSES, map_status  # noqa: E402
 
 
@@ -36,6 +38,33 @@ class StatusMapping(unittest.TestCase):
         for name, item, linked, expected in cases:
             with self.subTest(name=name):
                 self.assertEqual(map_status(item, linked), expected)
+
+
+class DraftConversion(unittest.TestCase):
+    def test_without_app_adds_note_once(self):
+        draft = {"id": "draft", "title": "Change", "body": ""}
+        item = {"id": "item", "content": draft}
+        with patch.object(project_sync, "graphql") as gql:
+            project_sync.convert_drafts({}, [item], "owner")
+            self.assertEqual(gql.call_args.kwargs["body"], project_sync.NOTE)
+            draft["body"] = project_sync.NOTE
+            gql.reset_mock()
+            project_sync.convert_drafts({}, [item], "owner")
+            gql.assert_not_called()
+
+    def test_with_app_converts_and_labels_issue(self):
+        item = {"id": "item", "content": {"id": "draft", "title": "Change",
+                                            "body": "Please change this"},
+                "fieldValueByName": {"name": "my-app"}}
+        with patch.object(project_sync.status, "api", side_effect=[
+            {"node_id": "repo-id", "owner": {"login": "owner"}}, {}
+        ]) as api, patch.object(project_sync, "graphql", return_value={
+            "convertProjectV2DraftIssueItemToIssue": {"item": {"content": {"number": 42}}}
+        }) as gql:
+            project_sync.convert_drafts({}, [item], "owner")
+        self.assertIn("convertProjectV2DraftIssueItemToIssue", gql.call_args.args[0])
+        self.assertEqual(api.call_args.args[0], "/repos/owner/my-app/issues/42/labels")
+        self.assertEqual(api.call_args.args[2]["labels"], ["change-request"])
 
 
 if __name__ == "__main__":

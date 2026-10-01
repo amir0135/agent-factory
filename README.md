@@ -25,7 +25,7 @@ GitHub (issues, PRs, Actions, files in this repo) is the control plane and the m
    security add-generic-password -a "$USER" -s agent-factory-project-pat -w
    bash scripts/factory-board.sh
    ```
-   On other systems, export `FACTORY_PROJECT_TOKEN` instead. The script reuses the same board on subsequent runs. GitHub's API cannot create views: follow the printed steps to make Board (group by Status), By app (table, group by App) and Needs you (filter `Status:"🙋 Needs you"`).
+   On other systems, export `FACTORY_PROJECT_TOKEN` instead. The script reuses the same board on subsequent runs and creates its views. GitHub's API cannot set group-by or the default view: follow the printed steps to group Board by Status, set it as default, and group By app by App. Needs you is filtered automatically.
 4. Install the `new-app` command:
    ```
    gh api repos/amir0135/agent-factory/contents/scripts/new-app.sh --jq .content | base64 -d | sudo tee /usr/local/bin/new-app >/dev/null && sudo chmod +x /usr/local/bin/new-app

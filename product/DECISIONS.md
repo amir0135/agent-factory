@@ -10,4 +10,4 @@ Consequence: all state lives in `product/`, `specs/`, issues and PRs.
 ## ADR-002: User-owned Factory board (2026-10-01)
 Context: per-repo pinned Status issues cannot provide cross-app intake or overview.
 Decision: use one user-owned Projects v2 board with single-select App, Status and Type fields. A plain Actions workflow uses a separate classic PAT to reconcile repo items and convert board drafts; Status remains the per-app detail and the existing status script supplies shared label/assignment logic.
-Consequence: GitHub's API cannot configure board views; the setup command prints manual view steps. Without the owner's PAT, project sync is a warning-only no-op.
+Consequence: GitHub's API creates views and sets their filters, but cannot set grouping or the default view; the setup command prints manual steps. Without the owner's PAT, project sync is a warning-only no-op.
