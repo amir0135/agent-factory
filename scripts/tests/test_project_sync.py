@@ -66,6 +66,73 @@ class DraftConversion(unittest.TestCase):
         self.assertEqual(api.call_args.args[0], "/repos/owner/my-app/issues/42/labels")
         self.assertEqual(api.call_args.args[2]["labels"], ["change-request"])
 
+    def test_failed_draft_does_not_prevent_next_conversion(self):
+        drafts = [
+            {"id": "bad", "content": {"id": "bad-draft", "title": "Bad", "body": ""},
+             "fieldValueByName": {"name": "bad-app"}},
+            {"id": "good", "content": {"id": "good-draft", "title": "Good", "body": ""},
+             "fieldValueByName": {"name": "good-app"}},
+        ]
+        with patch.object(project_sync.status, "api", side_effect=[
+            OSError("unavailable"),
+            {"node_id": "repo-id", "owner": {"login": "owner"}}, {},
+        ]) as api, patch.object(project_sync, "graphql", return_value={
+            "convertProjectV2DraftIssueItemToIssue": {"item": {"content": {"number": 42}}}
+        }) as gql:
+            project_sync.convert_drafts({}, drafts, "owner")
+        self.assertEqual(api.call_count, 3)
+        self.assertEqual(gql.call_args.kwargs["item"], "good")
+
+    def test_only_hub_converts_on_hourly_schedule_or_dispatch(self):
+        board = {"id": "board", "fields": {"nodes": []}}
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/my-app",
+                                      "FACTORY_HUB_REPO": "owner/hub",
+                                      "GITHUB_EVENT_NAME": "schedule",
+                                      "GITHUB_EVENT_SCHEDULE": "17 * * * *"}), \
+             patch.object(project_sync, "project", return_value=board), \
+             patch.object(project_sync, "items", return_value=[]), \
+             patch.object(project_sync, "convert_drafts") as convert, \
+             patch.object(project_sync, "reconcile") as reconcile:
+            project_sync.main()
+            convert.assert_not_called()
+            reconcile.assert_not_called()
+            os.environ["GITHUB_REPOSITORY"] = "owner/hub"
+            project_sync.main()
+            convert.assert_called_once()
+            reconcile.assert_not_called()
+            os.environ["GITHUB_EVENT_NAME"] = "workflow_dispatch"
+            project_sync.main()
+            self.assertEqual(convert.call_count, 2)
+
+
+class Reconciliation(unittest.TestCase):
+    def test_schedule_syncs_open_and_closed_board_items(self):
+        board = {"id": "board", "fields": {"nodes": []}}
+        existing = [
+            {"id": "closed-item", "content": {"id": "closed-id", "number": 9,
+             "state": "CLOSED", "stateReason": "COMPLETED",
+             "repository": {"nameWithOwner": "owner/my-app"}}},
+            {"id": "other-item", "content": {"id": "other-id", "number": 10,
+             "state": "CLOSED", "stateReason": "COMPLETED",
+             "repository": {"nameWithOwner": "owner/other-app"}}},
+        ]
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/my-app",
+                                      "GITHUB_EVENT_NAME": "schedule",
+                                      "GITHUB_EVENT_SCHEDULE": "15 6 * * *"}), \
+             patch.object(project_sync, "project", return_value=board), \
+             patch.object(project_sync, "items", return_value=existing), \
+             patch.object(project_sync, "convert_drafts") as convert, \
+             patch.object(project_sync.status, "api", side_effect=[
+                 [{"node_id": "open-issue", "number": 1}],
+                 [{"node_id": "open-pr", "number": 2}],
+             ]), \
+             patch.object(project_sync, "linked_pr", return_value=False), \
+             patch.object(project_sync, "sync_item") as sync:
+            project_sync.main()
+        convert.assert_not_called()
+        self.assertEqual([c.args[3]["node_id"] for c in sync.call_args_list],
+                         ["open-issue", "open-pr", "closed-id"])
+
 
 class PullRequestSync(unittest.TestCase):
     def test_cross_repo_closing_issue_does_not_update_same_number_locally(self):

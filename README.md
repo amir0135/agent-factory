@@ -54,7 +54,7 @@ This creates the repo from this template, sets the secrets, Actions permissions 
 | You want to... | Do this |
 |---|---|
 | Add a feature | Open a **Feature request** issue. Plain words. That's it. |
-| Change an app | On the board, add a draft with its **App** set; the daily sync creates a Change request issue. Or open that app's **Change request** form directly. |
+| Change an app | On the board, add a draft with its **App** set; the Factory hub converts it to a Change request issue within the hour. Or open that app's **Change request** form directly. |
 | Use it on an existing repo | Copy this harness in, then open a **Harness onboarding** issue. The planner adapts it without replacing working architecture. |
 | Unstick it | Actions > **Backlog Dispatcher** > Run workflow |
 | Work from VS Code | `/idea <what you want>` or `/continue` |

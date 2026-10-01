@@ -57,7 +57,9 @@ def items(project_id):
     while True:
         data = graphql(
             "query($id:ID!,$after:String){node(id:$id){... on ProjectV2{items(first:100,"
-            "after:$after){nodes{id content{... on Issue{id} ... on PullRequest{id}"
+            "after:$after){nodes{id content{... on Issue{id number state stateReason"
+            " repository{nameWithOwner}} ... on PullRequest{id number state mergedAt"
+            " repository{nameWithOwner}}"
             " ... on DraftIssue{id title body}} fieldValueByName(name:\"App\")"
             "{... on ProjectV2ItemFieldSingleSelectValue{name}}}"
             "} pageInfo{hasNextPage endCursor}}}}}",
@@ -118,34 +120,81 @@ def convert_drafts(board, existing, owner):
         draft = item.get("content") or {}
         if "title" not in draft:
             continue
-        app = (item.get("fieldValueByName") or {}).get("name")
-        if not app:
-            if NOTE not in (draft.get("body") or ""):
-                body = ((draft.get("body") or "").rstrip() + "\n\n" + NOTE).strip()
-                graphql("mutation($id:ID!,$body:String!){updateProjectV2DraftIssue("
-                        "input:{draftIssueId:$id,body:$body}){draftIssue{id}}}",
-                        id=draft["id"], body=body)
-            continue
-        if not re.fullmatch(r"[A-Za-z0-9_.-]+", app):
-            print(f"::warning::Invalid App option: {app}")
-            continue
-        # Ensure the target is owned by this user and accessible before creating.
-        repo = status.api(f"/repos/{owner}/{app}")
-        if repo["owner"]["login"].lower() != owner.lower():
-            continue
-        body = (draft.get("body") or "").replace(NOTE, "").strip()
-        if body != (draft.get("body") or ""):
+        try:
+            convert_draft(item, draft, owner)
+        except Exception as exc:
+            print(f"::warning::Could not convert Factory draft {item['id']}: {type(exc).__name__}")
+
+
+def convert_draft(item, draft, owner):
+    app = (item.get("fieldValueByName") or {}).get("name")
+    if not app:
+        if NOTE not in (draft.get("body") or ""):
+            body = ((draft.get("body") or "").rstrip() + "\n\n" + NOTE).strip()
             graphql("mutation($id:ID!,$body:String!){updateProjectV2DraftIssue("
                     "input:{draftIssueId:$id,body:$body}){draftIssue{id}}}",
                     id=draft["id"], body=body)
-        converted = graphql(
-            "mutation($item:ID!,$repo:ID!){convertProjectV2DraftIssueItemToIssue("
-            "input:{itemId:$item,repositoryId:$repo}){item{content{... on Issue{number}}}}}",
-            item=item["id"], repo=repo["node_id"],
-        )["convertProjectV2DraftIssueItemToIssue"]["item"]
-        number = converted["content"]["number"]
-        status.api(f"/repos/{owner}/{app}/issues/{number}/labels", "POST",
-                   {"labels": ["change-request"]})
+        return
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", app):
+        print(f"::warning::Invalid App option: {app}")
+        return
+    # Ensure the target is owned by this user and accessible before creating.
+    repo = status.api(f"/repos/{owner}/{app}")
+    if repo["owner"]["login"].lower() != owner.lower():
+        return
+    body = (draft.get("body") or "").replace(NOTE, "").strip()
+    if body != (draft.get("body") or ""):
+        graphql("mutation($id:ID!,$body:String!){updateProjectV2DraftIssue("
+                "input:{draftIssueId:$id,body:$body}){draftIssue{id}}}",
+                id=draft["id"], body=body)
+    converted = graphql(
+        "mutation($item:ID!,$repo:ID!){convertProjectV2DraftIssueItemToIssue("
+        "input:{itemId:$item,repositoryId:$repo}){item{content{... on Issue{number}}}}}",
+        item=item["id"], repo=repo["node_id"],
+    )["convertProjectV2DraftIssueItemToIssue"]["item"]
+    number = converted["content"]["number"]
+    status.api(f"/repos/{owner}/{app}/issues/{number}/labels", "POST",
+               {"labels": ["change-request"]})
+
+
+def open_items(owner, repo):
+    """List up to 200 open issues and PRs; issues REST also includes PRs."""
+    remaining = 200
+    for path, pull in (("issues", False), ("pulls", True)):
+        page = 1
+        while remaining:
+            batch = status.api(
+                f"/repos/{owner}/{repo}/{path}?state=open&per_page=100&page={page}"
+            )
+            for item in batch:
+                if not pull and "pull_request" in item:
+                    continue
+                if pull:
+                    item["pull_request"] = True
+                yield item, pull
+                remaining -= 1
+                if not remaining:
+                    break
+            if len(batch) < 100:
+                break
+            page += 1
+
+
+def reconcile(board, fields, existing, owner, repo):
+    for item, pull in open_items(owner, repo):
+        sync_item(board, fields, existing, item, False if pull else linked_pr(item))
+    for card in existing:
+        content = card.get("content") or {}
+        repository = (content.get("repository") or {}).get("nameWithOwner", "")
+        if repository.lower() != f"{owner}/{repo}".lower() or content.get("state") != "CLOSED":
+            continue
+        is_pr = "mergedAt" in content
+        closed = {"node_id": content["id"], "state": "closed", "number": content["number"]}
+        if is_pr:
+            closed.update(pull_request=True, merged_at=content["mergedAt"])
+        else:
+            closed["state_reason"] = (content.get("stateReason") or "").lower()
+        sync_item(board, fields, existing, closed)
 
 
 def main():
@@ -156,8 +205,13 @@ def main():
     fields = {f["name"]: f for f in board["fields"]["nodes"] if f and "options" in f}
     existing = list(items(board["id"]))
     event = os.environ.get("GITHUB_EVENT_NAME", "")
-    if event in ("schedule", "workflow_dispatch", "projects_v2_item"):
-        convert_drafts(board, existing, owner)
+    if event in ("schedule", "workflow_dispatch"):
+        hub = os.environ.get("FACTORY_HUB_REPO") or "amir0135/agent-factory"
+        hourly = os.environ.get("GITHUB_EVENT_SCHEDULE") == "17 * * * *"
+        if f"{owner}/{repo}".lower() == hub.lower() and (hourly or event == "workflow_dispatch"):
+            convert_drafts(board, existing, owner)
+        if not hourly:
+            reconcile(board, fields, existing, owner, repo)
         return
     import json
     with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as f:

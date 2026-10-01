@@ -53,7 +53,7 @@ ensure_field() {
       [.options[] | {id,name,color,description}] as $old |
       $old + [$desired[] | select(.name as $n | [$old[].name] | index($n) | not)]' <<<"$field")
     if [ "$(jq length <<<"$options_json")" -ne "$(jq '.options | length' <<<"$field")" ] ||
-       [ "$name" = Status ] && [ "$(jq -c '[.options[].name]' <<<"$field")" != "$(jq -c '[.[].name]' <<<"$options")" ]; then
+       { [ "$name" = Status ] && [ "$(jq -c '[.options[].name]' <<<"$field")" != "$(jq -c '[.[].name]' <<<"$options")" ]; }; then
       if [ "$name" = Status ]; then
         options_json=$(jq -nc --argjson desired "$options" --argjson old "$(jq '.options' <<<"$field")" '
           [$desired[] | . as $d | ($old[] | select(.name == $d.name)) // $d |
