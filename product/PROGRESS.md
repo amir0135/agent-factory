@@ -22,3 +22,4 @@ planning
 <!-- - YYYY-MM-DD: one line -->
 - 2026-10-01: pinned "📊 Status" issue added (`.github/workflows/status.yml` + `scripts/status.py`); owner overview is now that issue, not this file.
 - 2026-10-01: Factory board setup, project-sync workflow, and change-request intake added; live project creation needs the owner's classic PAT.
+- 2026-10-01: Factory drafts now convert hourly only in the hub; app repos reconcile open and closed board cards daily. Live PAT-backed verification remains pending.
