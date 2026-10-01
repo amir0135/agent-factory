@@ -1,8 +1,65 @@
 # agent-factory
 
-An autonomous software-engineering harness on GitHub. You describe what you want in plain words; Copilot agents specify, build, test, debug, evaluate and merge it, until every acceptance criterion passes. GitHub (issues, PRs, Actions, files in this repo) is the control plane and the memory.
+You write one sentence describing an app. Copilot agents plan it, build it, test it, fix it and merge it until every acceptance criterion passes. You only get pulled in when a human is truly needed.
 
-## The loop
+GitHub (issues, PRs, Actions, files in this repo) is the control plane and the memory.
+
+---
+
+## How to use it
+
+### 1. One-time setup (on your Mac, ~5 min)
+
+1. Log in to GitHub CLI:
+   ```
+   gh auth login
+   ```
+2. Create a **fine-grained PAT**: Repository access = **All repositories**. Actions, Contents, Issues, Pull requests, Workflows = **Read and write**. Save it to Keychain (paste when prompted):
+   ```
+   security add-generic-password -a "$USER" -s agent-factory-pat -w
+   ```
+3. Install the `new-app` command:
+   ```
+   gh api repos/amir0135/agent-factory/contents/scripts/new-app.sh --jq .content | base64 -d | sudo tee /usr/local/bin/new-app >/dev/null && sudo chmod +x /usr/local/bin/new-app
+   ```
+
+### 2. Start a new app (one command)
+
+```
+new-app my-app "A booking tool for my yoga studio: members book classes, I see attendance"
+```
+
+This creates the repo from this template, sets the secret, Actions permissions and labels, runs `harness-sync`, and files your idea as a Feature request.
+
+**Then click the one link it prints** (Copilot workflow approval has no API). After that, walk away.
+
+### 3. What happens without you
+
+1. **Planner** turns your idea into specs, product docs and acceptance criteria, and opens a PR.
+2. **Backlog Dispatcher** splits the work into task issues and assigns up to 3 Copilot builders in parallel.
+3. Each PR goes through **gate** (`verify.sh` + AC ratchet + gitleaks), then the **PR Evaluator**, then **auto-merge**.
+4. If something fails, **CI Doctor** / the evaluator tell Copilot exactly what to fix (max 3 tries, then it is marked stuck and re-planned).
+5. When `check_acceptance.py --strict` is green on main, you get a **`[DONE]` issue**.
+
+### 4. Day to day
+
+| You want to... | Do this |
+|---|---|
+| Add a feature | Open a **Feature request** issue. Plain words. That's it. |
+| Use it on an existing repo | Copy this harness in, then open a **Harness onboarding** issue. The planner adapts it without replacing working architecture. |
+| Unstick it | Actions > **Backlog Dispatcher** > Run workflow |
+| Work from VS Code | `/idea <what you want>` or `/continue` |
+| See progress | `product/PROGRESS.md` and the Actions tab |
+| Know when you're needed | `blocked:human` issues and `product/BLOCKERS.md` (credentials, real ambiguity, prod, billing, legal) |
+| Review merges yourself | Set repo variable `AUTO_MERGE=false`. PRs labelled `eval:pass` are then yours to merge. |
+
+### 5. Watch your budget
+
+Every agent run costs **Copilot premium requests** and **Actions minutes**. On private repos the free-plan minute cap runs out fast with this loop. **Make app repos public when you can**: Actions minutes on public repos are free. The dispatcher caps parallel builders at 3.
+
+---
+
+## The loop (detail)
 
 ```
  you: "Feature request" issue (plain words)          or  VS Code: /idea <text>
@@ -33,8 +90,6 @@ An autonomous software-engineering harness on GitHub. You describe what you want
    Done = `check_acceptance.py --strict` green on main ──> "[DONE]" issue for you
 ```
 
-Humans are pulled in only through `product/BLOCKERS.md` / `blocked:human` issues: credentials, real product ambiguity, prod, billing, legal.
-
 ## What lives where
 
 | Path | Purpose |
@@ -55,20 +110,7 @@ Humans are pulled in only through `product/BLOCKERS.md` / `blocked:human` issues
 | `.github/workflows/harness-sync.yml` | Installs spec-kit, compiles `.md` workflows to `.lock.yml`, fixes exec bits |
 | `.github/prompts/` | VS Code: `/idea` (plan something), `/continue` (keep building) |
 
-## Start a new app (one command)
-
-One-time, on your Mac:
-1. `gh auth login`
-2. Create a fine-grained PAT: Repository access **All repositories**; Actions, Contents, Issues, Pull requests, Workflows = **Read and write**. Store it: `security add-generic-password -a "$USER" -s agent-factory-pat -w` (paste when prompted).
-3. Install the command: `gh api repos/amir0135/agent-factory/contents/scripts/new-app.sh --jq .content | base64 -d | sudo tee /usr/local/bin/new-app >/dev/null && sudo chmod +x /usr/local/bin/new-app`
-
-Every new app:
-```
-new-app my-app "A booking tool for my yoga studio: members book classes, I see attendance"
-```
-It creates the repo from this template, sets the secret, Actions permissions and labels, runs harness-sync, and files your idea as a Feature request. The only manual step left is the one link it prints (Copilot workflow approval has no API).
-
-## Setup (manual, if not using new-app)
+## Manual setup (only if not using `new-app`)
 
 1. **Secret** `GH_AW_AGENT_TOKEN`: fine-grained PAT, resource owner = you, only this repo. Repository permissions: Actions, Contents, Issues, Pull requests, Workflows = Read and write; Metadata = Read. Settings > Secrets and variables > Actions > New repository secret.
 2. **Copilot cloud agent** on for this repo: profile > Copilot settings > Cloud agent > Repository access.
@@ -77,20 +119,10 @@ It creates the repo from this template, sets the secret, Actions permissions and
 5. Actions tab > **harness-sync** > Run workflow. Installs spec-kit and compiles the agentic workflows. Check it goes green.
 6. If agentic workflows fail with a Copilot auth error: add secret `COPILOT_GITHUB_TOKEN` (fine-grained PAT, Account permissions > Copilot Requests: Read).
 
-Optional: repo variable `AUTO_MERGE=false` to review merges yourself (label `eval:pass` PRs are then yours to merge).
-
-## Daily use
-
-- **New product or feature**: open a *Feature request* issue. Plain words. That's it.
-- **Existing repo**: copy this harness in, then open a *Harness onboarding* issue. The planner inspects the repo and adapts everything without replacing working architecture.
-- **Nudge**: Actions > Backlog Dispatcher > Run workflow.
-- **In VS Code**: `/idea <what you want>` or `/continue`.
-- **Watch**: `product/PROGRESS.md`, the Actions tab, `blocked:human` issues.
-
 ## Honest limits
 
 - gh-aw agentic workflows are in technical preview; syntax may shift. `harness-sync` reports compile errors as an issue.
-- Every agent run costs Copilot premium requests and Actions minutes (private repos: free-plan minute cap applies). Dispatcher caps parallel builders at 3.
+- Every agent run costs Copilot premium requests and Actions minutes (see **Watch your budget** above).
 - Without paid branch protection, `main` is not hard-locked against you. The auto-merge workflow is the gate for agents.
 - The evaluator is an LLM. It is the second opinion, not the first: `verify.sh` and the AC ratchet are the deterministic judges.
 
