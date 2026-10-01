@@ -6,6 +6,7 @@ on:
     workflows: ["gate"]
     types: [completed]
     conclusion: [success]
+    branches: ["copilot/**"]
   roles: all
 permissions:
   contents: read
@@ -36,7 +37,7 @@ safe-outputs:
 
 # PR Evaluator
 
-The `gate` passed for `${{ github.event.workflow_run.head_sha }}` on branch `${{ github.event.workflow_run.head_branch }}`.
+The gate passed for commit `${{ github.event.workflow_run.head_sha }}`.
 
 Find the open pull request whose head SHA is exactly that commit. Stop (noop) if: there is none, it is a draft, it was not authored by Copilot, or it already has an evaluator comment containing `Evaluated-SHA: ${{ github.event.workflow_run.head_sha }}`.
 

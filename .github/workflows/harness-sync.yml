@@ -35,12 +35,13 @@ jobs:
       - name: Compile agentic workflows
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
+          set -o pipefail
           gh extension install github/gh-aw
           gh aw compile 2>&1 | tee /tmp/compile.log
       - name: Exec bits
         run: |
           git add -A
-          for f in scripts/*.sh scripts/*.py scripts/hooks/* .specify/scripts/bash/*.sh; do
+          for f in scripts/*.sh scripts/*.py scripts/hooks/* scripts/ac/*.sh .specify/scripts/bash/*.sh; do
             [ -f "$f" ] && git update-index --chmod=+x "$f"
           done
       - name: Commit
