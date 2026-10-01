@@ -1,0 +1,33 @@
+name: project-sync
+on:
+  issues:
+    types: [opened, reopened, edited, labeled, unlabeled, assigned, unassigned, closed, deleted]
+  pull_request:
+    types: [opened, reopened, edited, labeled, unlabeled, assigned, unassigned, closed]
+  schedule:
+    - cron: "15 6 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: project-sync-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      HAS_TOKEN: ${{ secrets.FACTORY_PROJECT_TOKEN != '' }}
+    steps:
+      - name: Check project token
+        run: |
+          if [ "$HAS_TOKEN" != true ]; then
+            echo "::warning::FACTORY_PROJECT_TOKEN is missing; Factory board sync skipped."
+          fi
+      - uses: actions/checkout@v4
+        if: env.HAS_TOKEN == 'true'
+      - name: Sync Factory project
+        if: env.HAS_TOKEN == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.FACTORY_PROJECT_TOKEN }}
+        run: python3 scripts/project_sync.py
