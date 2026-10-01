@@ -106,15 +106,33 @@ class DraftConversion(unittest.TestCase):
 
 
 class Reconciliation(unittest.TestCase):
+    def test_unchanged_fields_do_not_trigger_project_mutations(self):
+        board = {"id": "board"}
+        fields = {name: {"id": name, "options": [{"id": name, "name": value}]}
+                  for name, value in (("Status", STATUSES[0]), ("App", "my-app"),
+                                      ("Type", "Task"))}
+        existing = [{"id": "card", "content": {"id": "issue-id"},
+                     "statusValue": {"name": STATUSES[0]},
+                     "fieldValueByName": {"name": "my-app"},
+                     "typeValue": {"name": "Task"}}]
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/my-app"}), \
+             patch.object(project_sync, "field_value") as update:
+            project_sync.sync_item(board, fields, existing, {"node_id": "issue-id"})
+        update.assert_not_called()
+
     def test_schedule_syncs_open_and_closed_board_items(self):
         board = {"id": "board", "fields": {"nodes": []}}
         existing = [
             {"id": "closed-item", "content": {"id": "closed-id", "number": 9,
              "state": "CLOSED", "stateReason": "COMPLETED",
+             "labels": {"nodes": [{"name": "bug"}]},
              "repository": {"nameWithOwner": "owner/my-app"}}},
             {"id": "other-item", "content": {"id": "other-id", "number": 10,
              "state": "CLOSED", "stateReason": "COMPLETED",
              "repository": {"nameWithOwner": "owner/other-app"}}},
+            {"id": "merged-item", "content": {"id": "merged-id", "number": 11,
+             "state": "MERGED", "mergedAt": "2026-10-01T16:00:00Z",
+             "repository": {"nameWithOwner": "owner/my-app"}}},
         ]
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/my-app",
                                       "GITHUB_EVENT_NAME": "schedule",
@@ -131,7 +149,24 @@ class Reconciliation(unittest.TestCase):
             project_sync.main()
         convert.assert_not_called()
         self.assertEqual([c.args[3]["node_id"] for c in sync.call_args_list],
-                         ["open-issue", "open-pr", "closed-id"])
+                         ["open-issue", "open-pr", "closed-id", "merged-id"])
+        self.assertEqual(sync.call_args_list[-2].args[3]["labels"], [{"name": "bug"}])
+        self.assertEqual(sync.call_args_list[-1].args[3]["merged_at"], "2026-10-01T16:00:00Z")
+
+    def test_two_hundred_issues_do_not_starve_open_prs(self):
+        issues = [{"node_id": f"issue-{n}"} for n in range(200)]
+        pulls = [{"node_id": "pr-1"}]
+
+        def api(path):
+            if "/pulls?" in path:
+                return pulls
+            return issues[:100] if "page=1" in path else issues[100:]
+
+        with patch.object(project_sync.status, "api", side_effect=api) as request:
+            result = list(project_sync.open_items("owner", "my-app"))
+        self.assertEqual(len(result), 200)
+        self.assertIn("pr-1", [i["node_id"] for i, _ in result])
+        self.assertTrue(any("/pulls?" in call.args[0] for call in request.call_args_list))
 
 
 class PullRequestSync(unittest.TestCase):

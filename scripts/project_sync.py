@@ -3,6 +3,7 @@
 import os
 import re
 import sys
+from itertools import islice
 
 import status
 
@@ -58,9 +59,14 @@ def items(project_id):
         data = graphql(
             "query($id:ID!,$after:String){node(id:$id){... on ProjectV2{items(first:100,"
             "after:$after){nodes{id content{... on Issue{id number state stateReason"
-            " repository{nameWithOwner}} ... on PullRequest{id number state mergedAt"
-            " repository{nameWithOwner}}"
+            " labels(first:20){nodes{name}} repository{nameWithOwner}}"
+            " ... on PullRequest{id number state mergedAt"
+            " labels(first:20){nodes{name}} repository{nameWithOwner}}"
             " ... on DraftIssue{id title body}} fieldValueByName(name:\"App\")"
+            "{... on ProjectV2ItemFieldSingleSelectValue{name}}"
+            " statusValue:fieldValueByName(name:\"Status\")"
+            "{... on ProjectV2ItemFieldSingleSelectValue{name}}"
+            " typeValue:fieldValueByName(name:\"Type\")"
             "{... on ProjectV2ItemFieldSingleSelectValue{name}}}"
             "} pageInfo{hasNextPage endCursor}}}}}",
             id=project_id, after=cursor,
@@ -99,6 +105,9 @@ def sync_item(board, fields, existing, item, linked_open_pr=False):
             else "Feature" if "feature" in kinds else "Task")
     for name, desired in (("Status", value), ("App", os.environ["GITHUB_REPOSITORY"].split("/")[1]),
                           ("Type", kind)):
+        key = {"Status": "statusValue", "App": "fieldValueByName", "Type": "typeValue"}[name]
+        if (found.get(key) or {}).get("name") == desired:
+            continue
         field = fields[name]
         option = next((o["id"] for o in field["options"] if o["name"] == desired), None)
         if option:
@@ -159,10 +168,9 @@ def convert_draft(item, draft, owner):
 
 def open_items(owner, repo):
     """List up to 200 open issues and PRs; issues REST also includes PRs."""
-    remaining = 200
-    for path, pull in (("issues", False), ("pulls", True)):
+    def pages(path, pull):
         page = 1
-        while remaining:
+        while page <= 2:
             batch = status.api(
                 f"/repos/{owner}/{repo}/{path}?state=open&per_page=100&page={page}"
             )
@@ -172,12 +180,19 @@ def open_items(owner, repo):
                 if pull:
                     item["pull_request"] = True
                 yield item, pull
-                remaining -= 1
-                if not remaining:
-                    break
             if len(batch) < 100:
                 break
             page += 1
+
+    issues, pulls = pages("issues", False), pages("pulls", True)
+    remaining = 200
+    for batch in (islice(issues, 100), islice(pulls, 100),
+                  islice(issues, 100), islice(pulls, 100)):
+        for item in batch:
+            yield item
+            remaining -= 1
+            if not remaining:
+                return
 
 
 def reconcile(board, fields, existing, owner, repo):
@@ -186,10 +201,13 @@ def reconcile(board, fields, existing, owner, repo):
     for card in existing:
         content = card.get("content") or {}
         repository = (content.get("repository") or {}).get("nameWithOwner", "")
-        if repository.lower() != f"{owner}/{repo}".lower() or content.get("state") != "CLOSED":
+        if repository.lower() != f"{owner}/{repo}".lower() or content.get("state") not in (
+            "CLOSED", "MERGED"
+        ):
             continue
         is_pr = "mergedAt" in content
-        closed = {"node_id": content["id"], "state": "closed", "number": content["number"]}
+        closed = {"node_id": content["id"], "state": "closed", "number": content["number"],
+                  "labels": content.get("labels", {}).get("nodes", [])}
         if is_pr:
             closed.update(pull_request=True, merged_at=content["mergedAt"])
         else:
