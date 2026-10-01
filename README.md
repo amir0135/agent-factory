@@ -8,6 +8,8 @@ GitHub (issues, PRs, Actions, files in this repo) is the control plane and the m
 
 ## How to use it
 
+**Your overview: the pinned 📊 Status issue in each app repo. Start there.** Goal, progress, what is in flight, what needs you — one screen, works on the GitHub mobile app.
+
 ### 1. One-time setup (on your Mac, ~5 min)
 
 1. Log in to GitHub CLI:
@@ -49,7 +51,7 @@ This creates the repo from this template, sets the secret, Actions permissions a
 | Use it on an existing repo | Copy this harness in, then open a **Harness onboarding** issue. The planner adapts it without replacing working architecture. |
 | Unstick it | Actions > **Backlog Dispatcher** > Run workflow |
 | Work from VS Code | `/idea <what you want>` or `/continue` |
-| See progress | `product/PROGRESS.md` and the Actions tab |
+| See progress | The pinned **📊 Status** issue (auto-updated, never commented on) |
 | Know when you're needed | `blocked:human` issues and `product/BLOCKERS.md` (credentials, real ambiguity, prod, billing, legal) |
 | Review merges yourself | Set repo variable `AUTO_MERGE=false`. PRs labelled `eval:pass` are then yours to merge. |
 
@@ -104,6 +106,7 @@ Every agent run costs **Copilot premium requests** and **Actions minutes**. On p
 | `scripts/verify.sh` | THE quality gate: install, lint, format, types, unit, integration, build, E2E, audit |
 | `scripts/check_acceptance.py` | Runs every AC; `done` rows are regression-locked; `--strict` = product done |
 | `.github/workflows/gate.yml` | CI judge (skips drafts to save minutes) |
+| `.github/workflows/status.yml` + `scripts/status.py` | Rewrites the pinned **📊 Status** issue. Plain script, no LLM |
 | `.github/workflows/*.md` | Agentic workflows (gh-aw): Feature Intake, Backlog Dispatcher, PR CI Doctor, PR Evaluator, Spec Auditor, plus upstream githubnext/agentics CI Failure Doctor and `/pr-fix` |
 | `scripts/new-app.sh` | One command to start a new app from this template |
 | `.github/workflows/auto-merge.yml` | Merge gate that replaces paid branch protection |

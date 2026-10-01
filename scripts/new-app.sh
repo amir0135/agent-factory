@@ -40,7 +40,7 @@ gh api -X PUT "repos/$REPO/actions/permissions/workflow" \
   -f default_workflow_permissions=write -F can_approve_pull_request_reviews=true >/dev/null
 
 say "Labels"
-for l in feature onboard needs-replan agent-task bug blocked:human stuck regression eval:pass eval:fail product-done; do
+for l in feature onboard needs-replan agent-task bug blocked:human stuck regression eval:pass eval:fail product-done status; do
   gh label create "$l" -R "$REPO" --force >/dev/null
 done
 
@@ -49,6 +49,9 @@ for i in $(seq 1 20); do gh workflow run harness-sync.yml -R "$REPO" >/dev/null 
 sleep 8
 RUN=$(gh run list -R "$REPO" --workflow harness-sync.yml --limit 1 --json databaseId --jq '.[0].databaseId')
 gh run watch "$RUN" -R "$REPO" --exit-status >/dev/null && echo "harness-sync green"
+
+say "Pinned 'Status' issue (your overview)"
+gh workflow run status.yml -R "$REPO" >/dev/null 2>&1 || echo "status.yml did not start; run it from the Actions tab"
 
 say "Feature request (the planner picks it up)"
 TITLE=$(printf '%s' "$IDEA" | head -c 70)
@@ -62,5 +65,6 @@ One click GitHub has no API for (Copilot's CI would otherwise wait for you):
   https://github.com/$REPO/settings  ->  Copilot > Cloud agent
   -> turn OFF "Require approval for workflow runs"
 
-Watch: https://github.com/$REPO/actions  |  progress: product/PROGRESS.md
+Your overview: the pinned 📊 Status issue -> https://github.com/$REPO/issues
+Watch: https://github.com/$REPO/actions
 MSG
