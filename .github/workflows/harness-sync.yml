@@ -3,6 +3,7 @@
 #   - sets exec bits on scripts
 #   - compiles agentic workflows (.md -> .lock.yml)
 # Pushing workflow files needs a PAT with Workflows: write -> secret GH_AW_AGENT_TOKEN.
+# If main is protected by required status checks, the sync lands through a PR instead of a direct push.
 name: harness-sync
 on:
   push:
@@ -21,6 +22,7 @@ concurrency: { group: harness-sync, cancel-in-progress: false }
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Initialize log
         id: initialize_log
@@ -67,7 +69,9 @@ jobs:
           done
       - name: Commit
         id: commit
-        env: { HAS_PAT: "${{ secrets.GH_AW_AGENT_TOKEN != '' }}" }
+        env:
+          HAS_PAT: "${{ secrets.GH_AW_AGENT_TOKEN != '' }}"
+          GH_TOKEN: "${{ secrets.GH_AW_AGENT_TOKEN || github.token }}"
         run: |
           exec > >(tee -a /tmp/harness-sync.log) 2>&1
           echo "=== Step: Commit ==="
@@ -77,18 +81,36 @@ jobs:
             echo "::error::Add the repo secret GH_AW_AGENT_TOKEN using a fine-grained PAT with Contents: write and Workflows: write."
             exit 1
           fi
+          title="chore(harness): sync spec-kit, exec bits, compiled agentic workflows"
           git config user.name "harness-sync[bot]"
           git config user.email "harness-sync@users.noreply.github.com"
-          git commit -m "chore(harness): sync spec-kit, exec bits, compiled agentic workflows"
-          for attempt in 1 2 3; do
-            echo "Push attempt $attempt of 3"
-            if git pull --rebase --autostash origin main && git push origin HEAD:main; then
+          git commit -q -m "$title"
+          git --no-pager show --stat --format='%h %s' HEAD | tail -5
+
+          # 1) Direct push: works in repos where main has no required checks.
+          echo "Direct push to main"
+          if git pull --rebase --autostash origin main && git push origin HEAD:main; then
+            exit 0
+          fi
+          git rebase --abort 2>/dev/null || true
+
+          # 2) main requires status checks (ruleset): land the sync through a PR.
+          #    Nothing is bypassed; the PR merges only once its required checks pass.
+          branch="harness-sync/run-${GITHUB_RUN_ID}"
+          echo "Direct push rejected; opening a PR from $branch"
+          git push origin "HEAD:refs/heads/$branch"
+          pr_url=$(gh pr create --base main --head "$branch" --title "$title" \
+            --body "Automated by harness-sync run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. main requires status checks, so the sync lands through this PR.")
+          echo "Opened $pr_url"
+          for attempt in $(seq 1 60); do
+            if gh pr merge "$pr_url" --merge; then
+              echo "Merged $pr_url"
+              git push origin --delete "$branch" || true
               exit 0
             fi
-            git rebase --abort 2>/dev/null || true
-            [ "$attempt" -eq 3 ] || sleep "$((attempt * 2))"
+            sleep 15
           done
-          echo "::error::Could not push harness changes after 3 attempts."
+          echo "::error::Sync PR $pr_url did not become mergeable within 15 minutes. Check its required checks."
           exit 1
       - name: Close issue after successful sync
         id: close_issue
