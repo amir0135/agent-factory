@@ -22,8 +22,10 @@ tools:
   bash: true
   playwright:
     allowed_domains: [localhost, 127.0.0.1]
+# Registries are needed to install dependencies before serve.sh can start the app.
+# The browser itself stays restricted to loopback via tools.playwright.allowed_domains.
 network:
-  allowed: [localhost, 127.0.0.1]
+  allowed: [defaults, node, python, playwright, local]
 safe-outputs:
   add-comment:
     target: "*"
