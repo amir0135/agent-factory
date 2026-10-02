@@ -8,7 +8,7 @@ GitHub (issues, PRs, Actions, files in this repo) is the control plane and the m
 
 ## How to use it
 
-**Your overview: the pinned 📊 Status issue in each app repo. Start there.** Goal, progress, what is in flight, what needs you — one screen, works on the GitHub mobile app.
+**Your overview: the 🏭 Factory board (all apps). Per app detail: the pinned 📊 Status issue. To change something: + Add item on the board, or the Change request form.**
 
 ### 1. One-time setup (on your Mac, ~5 min)
 
@@ -20,7 +20,13 @@ GitHub (issues, PRs, Actions, files in this repo) is the control plane and the m
    ```
    security add-generic-password -a "$USER" -s agent-factory-pat -w
    ```
-3. Install the `new-app` command:
+3. Create a **classic PAT** with `project` and `repo` scopes. Save it in Keychain (paste when prompted), then create your one user-owned Factory board from this checkout:
+   ```
+   security add-generic-password -a "$USER" -s agent-factory-project-pat -w
+   bash scripts/factory-board.sh
+   ```
+   On other systems, export `FACTORY_PROJECT_TOKEN` instead. The script reuses the same board on subsequent runs and creates its views. GitHub's API cannot set group-by or the default view: follow the printed steps to group Board by Status, set it as default, and group By app by App. Needs you is filtered automatically.
+4. Install the `new-app` command:
    ```
    gh api repos/amir0135/agent-factory/contents/scripts/new-app.sh --jq .content | base64 -d | sudo tee /usr/local/bin/new-app >/dev/null && sudo chmod +x /usr/local/bin/new-app
    ```
@@ -31,7 +37,7 @@ GitHub (issues, PRs, Actions, files in this repo) is the control plane and the m
 new-app my-app "A booking tool for my yoga studio: members book classes, I see attendance"
 ```
 
-This creates the repo from this template, sets the secret, Actions permissions and labels, runs `harness-sync`, and files your idea as a Feature request.
+This creates the repo from this template, sets the secrets, Actions permissions and labels, links it to the Factory board, runs `harness-sync`, and files your idea as a Feature request. If the project PAT is unavailable, board setup is skipped with a warning; add the secret and run `bash scripts/factory-board.sh owner/repo` later.
 
 **Then click the one link it prints** (Copilot workflow approval has no API). After that, walk away.
 
@@ -48,10 +54,11 @@ This creates the repo from this template, sets the secret, Actions permissions a
 | You want to... | Do this |
 |---|---|
 | Add a feature | Open a **Feature request** issue. Plain words. That's it. |
+| Change an app | On the board, add a draft with its **App** set; the Factory hub converts it to a Change request issue within the hour. Or open that app's **Change request** form directly. |
 | Use it on an existing repo | Copy this harness in, then open a **Harness onboarding** issue. The planner adapts it without replacing working architecture. |
 | Unstick it | Actions > **Backlog Dispatcher** > Run workflow |
 | Work from VS Code | `/idea <what you want>` or `/continue` |
-| See progress | The pinned **📊 Status** issue (auto-updated, never commented on) |
+| See progress | The **🏭 Factory** board across apps; the pinned **📊 Status** issue for each app (auto-updated, never commented on) |
 | Know when you're needed | `blocked:human` issues and `product/BLOCKERS.md` (credentials, real ambiguity, prod, billing, legal) |
 | Review merges yourself | Set repo variable `AUTO_MERGE=false`. PRs labelled `eval:pass` are then yours to merge. |
 
@@ -107,6 +114,8 @@ Every agent run costs **Copilot premium requests** and **Actions minutes**. The 
 | `scripts/check_acceptance.py` | Runs every AC; `done` rows are regression-locked; `--strict` = product done |
 | `.github/workflows/gate.yml` | CI judge (skips drafts to save minutes) |
 | `.github/workflows/status.yml` + `scripts/status.py` | Rewrites the pinned **📊 Status** issue. Plain script, no LLM |
+| `.github/workflows/project-sync.yml` + `scripts/project_sync.py` | Syncs issues, PRs and board drafts with the user-owned Factory Project. Plain script, no LLM |
+| `scripts/factory-board.sh` | Idempotently creates the board, fields and links each new app |
 | `.github/workflows/*.md` | Agentic workflows (gh-aw): Feature Intake, Backlog Dispatcher, PR CI Doctor, PR Evaluator, Spec Auditor, plus upstream githubnext/agentics CI Failure Doctor and `/pr-fix` |
 | `scripts/new-app.sh` | One command to start a new app from this template |
 | `.github/workflows/auto-merge.yml` | Merge gate that replaces paid branch protection |
@@ -121,6 +130,7 @@ Every agent run costs **Copilot premium requests** and **Actions minutes**. The 
 4. **Allow auto-merge flow**: Settings > Actions > General > Workflow permissions > "Read and write" + "Allow GitHub Actions to create and approve pull requests".
 5. Actions tab > **harness-sync** > Run workflow. Installs spec-kit and compiles the agentic workflows. Check it goes green.
 6. If agentic workflows fail with a Copilot auth error: add secret `COPILOT_GITHUB_TOKEN` (fine-grained PAT, Account permissions > Copilot Requests: Read).
+7. For the Factory board: set `FACTORY_PROJECT_TOKEN` to a classic PAT with `project` and `repo` scopes, then run `bash scripts/factory-board.sh owner/repo`. Without this secret, project-sync warns and exits successfully.
 
 ## Honest limits
 

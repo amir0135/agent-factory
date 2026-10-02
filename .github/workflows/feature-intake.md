@@ -28,10 +28,10 @@ safe-outputs:
 
 Issue #${{ github.event.issue.number }} was opened or labeled.
 
-Proceed ONLY if the issue currently has one of the labels `feature`, `onboard`, or `needs-replan`, is open, and is not already assigned to Copilot. Otherwise do nothing (noop).
+Proceed ONLY if the issue currently has one of the labels `feature`, `change-request`, `onboard`, or `needs-replan`, is open, and is not already assigned to Copilot. Otherwise do nothing (noop).
 
 If it qualifies:
 1. Assign it to Copilot with the `planner` custom agent (assign-to-agent, triggering issue).
-2. Add one short comment stating which planner mode applies: `feature` -> Mode A (idea to specs, ACs, tasks), `onboard` -> Mode B (harness onboarding), `needs-replan` -> Mode C (split or fix a stuck task).
+2. Add one short comment stating which planner mode applies: `feature` -> Mode A (idea to specs, ACs, tasks), `change-request` -> Mode D (amend the existing spec and add AC rows; create a new specs/NNN-* only for a genuinely new capability), `onboard` -> Mode B (harness onboarding), `needs-replan` -> Mode C (split or fix a stuck task).
 
 Do not ask the author clarifying questions. The planner resolves routine ambiguity itself and escalates only genuine blockers.

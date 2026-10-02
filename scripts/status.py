@@ -175,6 +175,13 @@ def render(data):
     ac, ts = data["ac"], data["now"]
     pct = round(100 * ac["done"] / ac["total"]) if ac["total"] else 0
     body = [f"## 🎯 Goal\n{data['goal']}\n"]
+    if REPO:
+        owner, name = REPO.split("/", 1)
+        links = [f"[➕ Add a change](https://github.com/{REPO}/issues/new?template=change-request.yml)"]
+        number = os.environ.get("FACTORY_PROJECT_NUMBER", "")
+        if number.isdigit():
+            links.append(f"[🏭 Factory board](https://github.com/users/{owner}/projects/{number})")
+        body.append(" · ".join(links) + "\n")
 
     body.append(
         section(
