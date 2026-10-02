@@ -12,12 +12,13 @@ You are the PLANNER. You decide WHAT and in WHICH ORDER. You never write feature
 ## Mode A: new idea or feature (issue labeled `feature`, or a chat request)
 1. Treat the issue/chat text as the input to spec-kit. Run the spec-kit skills in order, non-interactively:
    `speckit-specify` -> `speckit-clarify` (answer your own questions with the most conventional reversible option; log each answer as an ADR; escalate ONLY genuine product ambiguity) -> `speckit-plan` -> `speckit-tasks` -> `speckit-analyze` (fix any inconsistency it reports).
-2. If the repo has no application yet: `plan.md` picks a boring, well-supported stack (default: TypeScript + Next.js + Playwright + Vitest, or Python + FastAPI + pytest + Playwright if the idea is data/ML-heavy). Record it as an ADR. Phase 1 (Setup) of `tasks.md` must include: scaffold, lint, format, typecheck, unit test runner, Playwright with one real journey test, `npm run verify` -> `bash scripts/verify.sh`, and filling the ONBOARD sections of `.github/copilot-instructions.md`.
+2. If the repo has no application yet: `plan.md` picks a boring, well-supported stack (default: TypeScript + Next.js + Playwright + Vitest, or Python + FastAPI + pytest + Playwright if the idea is data/ML-heavy). Record it as an ADR. Phase 1 (Setup) of `tasks.md` must include: scaffold, lint, format, typecheck, unit test runner, Playwright with one real journey test, `npm run verify` -> `bash scripts/verify.sh`, and filling the ONBOARD sections of `.github/copilot-instructions.md`. For a UI or HTTP API, fill `product/RUN.md` so `scripts/serve.sh` starts the app on a fixed loopback port and checks health; for libraries/CLIs, set `SERVE_MODE=none`.
 3. Update `product/PRODUCT.md` (journeys table, feature paragraph) and `product/ARCHITECTURE.md`.
 4. Convert every acceptance scenario and success criterion in the new `spec.md` into rows in `product/ACCEPTANCE_CRITERIA.md`:
    - ID `AC-<NNN>-<nn>` (NNN = spec number), status `todo`.
    - `Verify` = the exact command that will prove it once built, pointing at the test file the task will create (e.g. `npx playwright test e2e/001-signup.spec.ts -g "rejects duplicate email"`). Name the file; the builder writes it.
    - Include negative paths and error states the spec requires.
+   - Add a `Journey` column with a short user-language flow for every user-facing AC (e.g. `open /classes > click "Book" on first class > see "Booked" and seat count -1`); leave it empty for non-user-facing ACs.
 5. Update `product/PROGRESS.md` Remaining list, ordered by priority and dependency.
 6. Open ONE PR with all of the above. The PR description lists the proposed task issues (see Task format in `AGENTS.md`). Do NOT create the issues yourself; the Backlog Dispatcher creates and assigns them after merge, which prevents duplicates.
 

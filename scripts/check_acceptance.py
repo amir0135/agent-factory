@@ -21,14 +21,26 @@ def parse(text):
     m = re.search(r"<!-- AC-TABLE:START -->(.*?)<!-- AC-TABLE:END -->", text, re.S)
     if not m:
         sys.exit(f"{PATH}: AC-TABLE markers missing")
-    rows = []
+    rows, columns = [], None
     for line in m.group(1).strip().splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) < 5 or cells[0] in ("ID", "") or set(cells[0]) <= set("-: "):
+        if not cells or set(cells[0]) <= set("-: "):
             continue
-        ac_id, feature, crit, verify, status = cells[:5]
+        if cells[0].casefold() == "id":
+            columns = {name.casefold(): i for i, name in enumerate(cells)}
+            continue
+        if not columns:
+            continue
+        required = ("id", "feature", "criterion", "verify", "status")
+        if any(name not in columns or columns[name] >= len(cells) for name in required):
+            continue
+        ac_id, feature, crit, verify, status = (cells[columns[name]] for name in required)
+        journey = cells[columns["journey"]] if columns.get("journey", len(cells)) < len(cells) else ""
         verify = verify.strip().strip("`").strip()
-        rows.append(dict(id=ac_id, feature=feature, crit=crit, verify=verify, status=status.lower()))
+        rows.append(dict(
+            id=ac_id, feature=feature, crit=crit, verify=verify,
+            status=status.lower(), journey=journey,
+        ))
     ids = [r["id"] for r in rows]
     dup = {i for i in ids if ids.count(i) > 1}
     if dup:
