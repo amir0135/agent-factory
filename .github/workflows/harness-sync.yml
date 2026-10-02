@@ -56,6 +56,11 @@ jobs:
         run: |
           exec > >(tee -a /tmp/harness-sync.log) 2>&1
           echo "=== Step: Exec bits ==="
+          # Set the mode on disk first so the index and working tree agree;
+          # an index-only mode change leaves the tree dirty and blocks the rebase below.
+          for f in scripts/*.sh scripts/*.py scripts/hooks/* scripts/ac/*.sh .specify/scripts/bash/*.sh; do
+            [ -f "$f" ] && chmod +x "$f"
+          done
           git add -A
           for f in scripts/*.sh scripts/*.py scripts/hooks/* scripts/ac/*.sh .specify/scripts/bash/*.sh; do
             [ -f "$f" ] && git update-index --chmod=+x "$f"
@@ -77,10 +82,10 @@ jobs:
           git commit -m "chore(harness): sync spec-kit, exec bits, compiled agentic workflows"
           for attempt in 1 2 3; do
             echo "Push attempt $attempt of 3"
-            if git pull --rebase origin main && git push origin HEAD:main; then
+            if git pull --rebase --autostash origin main && git push origin HEAD:main; then
               exit 0
             fi
-            git rebase --abort || true
+            git rebase --abort 2>/dev/null || true
             [ "$attempt" -eq 3 ] || sleep "$((attempt * 2))"
           done
           echo "::error::Could not push harness changes after 3 attempts."
