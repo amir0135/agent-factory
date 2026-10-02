@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+"""Pure, table-driven Factory status mapping regression tests."""
+import os
+import sys
+import unittest
+from unittest.mock import mock_open, patch
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import project_sync  # noqa: E402
+from project_sync import STATUSES, map_status  # noqa: E402
+
+
+class StatusMapping(unittest.TestCase):
+    def test_first_matching_rule(self):
+        cases = [
+            ("completed", {"state": "closed", "state_reason": "completed",
+                            "labels": [{"name": "stuck"}]}, False, STATUSES[6]),
+            ("not planned", {"state": "closed", "state_reason": "not_planned"}, False, None),
+            ("closed unmerged PR", {"state": "closed", "pull_request": True}, False, None),
+            ("merged", {"merged_at": "2026-01-01", "pull_request": True}, False, STATUSES[6]),
+            ("blocked PR", {"pull_request": True, "labels": [{"name": "blocked:human"}]},
+             False, STATUSES[5]),
+            ("stuck", {"labels": [{"name": "stuck"}]}, False, STATUSES[5]),
+            ("open PR", {"pull_request": True}, False, STATUSES[4]),
+            ("linked PR", {}, True, STATUSES[4]),
+            ("building", {"labels": [{"name": "agent-task"}],
+                          "assignees": [{"login": "copilot-swe-agent"}]}, False, STATUSES[3]),
+            ("ready", {"labels": [{"name": "agent-task"}]}, False, STATUSES[2]),
+            ("planning change", {"labels": [{"name": "change-request"}],
+                                 "assignees": [{"login": "copilot-swe-agent"}]},
+             False, STATUSES[1]),
+            ("planning feature", {"labels": [{"name": "feature"}],
+                                  "assignees": [{"login": "copilot"}]}, False, STATUSES[1]),
+            ("other copilot", {"assignees": [{"login": "copilot"}]}, False, STATUSES[3]),
+            ("change inbox", {"labels": [{"name": "change-request"}]}, False, STATUSES[0]),
+            ("default", {}, False, STATUSES[0]),
+        ]
+        for name, item, linked, expected in cases:
+            with self.subTest(name=name):
+                self.assertEqual(map_status(item, linked), expected)
+
+
+class DraftConversion(unittest.TestCase):
+    def test_without_app_adds_note_once(self):
+        draft = {"id": "draft", "title": "Change", "body": ""}
+        item = {"id": "item", "content": draft}
+        with patch.object(project_sync, "graphql") as gql:
+            project_sync.convert_drafts({}, [item], "owner")
+            self.assertEqual(gql.call_args.kwargs["body"], project_sync.NOTE)
+            draft["body"] = project_sync.NOTE
+            gql.reset_mock()
+            project_sync.convert_drafts({}, [item], "owner")
+            gql.assert_not_called()
+
+    def test_with_app_converts_and_labels_issue(self):
+        item = {"id": "item", "content": {"id": "draft", "title": "Change",
+                                            "body": "Please change this"},
+                "fieldValueByName": {"name": "my-app"}}
+        with patch.object(project_sync.status, "api", side_effect=[
+            {"node_id": "repo-id", "owner": {"login": "owner"}}, {}
+        ]) as api, patch.object(project_sync, "graphql", return_value={
+            "convertProjectV2DraftIssueItemToIssue": {"item": {"content": {"number": 42}}}
+        }) as gql:
+            project_sync.convert_drafts({}, [item], "owner")
+        self.assertIn("convertProjectV2DraftIssueItemToIssue", gql.call_args.args[0])
+        self.assertEqual(api.call_args.args[0], "/repos/owner/my-app/issues/42/labels")
+        self.assertEqual(api.call_args.args[2]["labels"], ["change-request"])
+
+    def test_failed_draft_does_not_prevent_next_conversion(self):
+        drafts = [
+            {"id": "bad", "content": {"id": "bad-draft", "title": "Bad", "body": ""},
+             "fieldValueByName": {"name": "bad-app"}},
+            {"id": "good", "content": {"id": "good-draft", "title": "Good", "body": ""},
+             "fieldValueByName": {"name": "good-app"}},
+        ]
+        with patch.object(project_sync.status, "api", side_effect=[
+            OSError("unavailable"),
+            {"node_id": "repo-id", "owner": {"login": "owner"}}, {},
+        ]) as api, patch.object(project_sync, "graphql", return_value={
+            "convertProjectV2DraftIssueItemToIssue": {"item": {"content": {"number": 42}}}
+        }) as gql:
+            project_sync.convert_drafts({}, drafts, "owner")
+        self.assertEqual(api.call_count, 3)
+        self.assertEqual(gql.call_args.kwargs["item"], "good")
+
+    def test_only_hub_converts_on_hourly_schedule_or_dispatch(self):
+        board = {"id": "board", "fields": {"nodes": []}}
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/my-app",
+                                      "FACTORY_HUB_REPO": "owner/hub",
+                                      "GITHUB_EVENT_NAME": "schedule",
+                                      "GITHUB_EVENT_SCHEDULE": "17 * * * *"}), \
+             patch.object(project_sync, "project", return_value=board), \
+             patch.object(project_sync, "items", return_value=[]), \
+             patch.object(project_sync, "convert_drafts") as convert, \
+             patch.object(project_sync, "reconcile") as reconcile:
+            project_sync.main()
+            convert.assert_not_called()
+            reconcile.assert_not_called()
+            os.environ["GITHUB_REPOSITORY"] = "owner/hub"
+            project_sync.main()
+            convert.assert_called_once()
+            reconcile.assert_not_called()
+            os.environ["GITHUB_EVENT_NAME"] = "workflow_dispatch"
+            project_sync.main()
+            self.assertEqual(convert.call_count, 2)
+
+
+class Reconciliation(unittest.TestCase):
+    def test_unchanged_fields_do_not_trigger_project_mutations(self):
+        board = {"id": "board"}
+        fields = {name: {"id": name, "options": [{"id": name, "name": value}]}
+                  for name, value in (("Status", STATUSES[0]), ("App", "my-app"),
+                                      ("Type", "Task"))}
+        existing = [{"id": "card", "content": {"id": "issue-id"},
+                     "statusValue": {"name": STATUSES[0]},
+                     "fieldValueByName": {"name": "my-app"},
+                     "typeValue": {"name": "Task"}}]
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/my-app"}), \
+             patch.object(project_sync, "field_value") as update:
+            project_sync.sync_item(board, fields, existing, {"node_id": "issue-id"})
+        update.assert_not_called()
+
+    def test_schedule_syncs_open_and_closed_board_items(self):
+        board = {"id": "board", "fields": {"nodes": []}}
+        existing = [
+            {"id": "closed-item", "content": {"id": "closed-id", "number": 9,
+             "state": "CLOSED", "stateReason": "COMPLETED",
+             "labels": {"nodes": [{"name": "bug"}]},
+             "repository": {"nameWithOwner": "owner/my-app"}}},
+            {"id": "other-item", "content": {"id": "other-id", "number": 10,
+             "state": "CLOSED", "stateReason": "COMPLETED",
+             "repository": {"nameWithOwner": "owner/other-app"}}},
+            {"id": "merged-item", "content": {"id": "merged-id", "number": 11,
+             "state": "MERGED", "mergedAt": "2026-10-01T16:00:00Z",
+             "repository": {"nameWithOwner": "owner/my-app"}}},
+        ]
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/my-app",
+                                      "GITHUB_EVENT_NAME": "schedule",
+                                      "GITHUB_EVENT_SCHEDULE": "15 6 * * *"}), \
+             patch.object(project_sync, "project", return_value=board), \
+             patch.object(project_sync, "items", return_value=existing), \
+             patch.object(project_sync, "convert_drafts") as convert, \
+             patch.object(project_sync.status, "api", side_effect=[
+                 [{"node_id": "open-issue", "number": 1}],
+                 [{"node_id": "open-pr", "number": 2}],
+             ]), \
+             patch.object(project_sync, "linked_pr", return_value=False), \
+             patch.object(project_sync, "sync_item") as sync:
+            project_sync.main()
+        convert.assert_not_called()
+        self.assertEqual([c.args[3]["node_id"] for c in sync.call_args_list],
+                         ["open-issue", "open-pr", "closed-id", "merged-id"])
+        self.assertEqual(sync.call_args_list[-2].args[3]["labels"], [{"name": "bug"}])
+        self.assertEqual(sync.call_args_list[-1].args[3]["merged_at"], "2026-10-01T16:00:00Z")
+
+    def test_two_hundred_issues_do_not_starve_open_prs(self):
+        issues = [{"node_id": f"issue-{n}"} for n in range(200)]
+        pulls = [{"node_id": "pr-1"}]
+
+        def api(path):
+            if "/pulls?" in path:
+                return pulls
+            return issues[:100] if "page=1" in path else issues[100:]
+
+        with patch.object(project_sync.status, "api", side_effect=api) as request:
+            result = list(project_sync.open_items("owner", "my-app"))
+        self.assertEqual(len(result), 200)
+        self.assertIn("pr-1", [i["node_id"] for i, _ in result])
+        self.assertTrue(any("/pulls?" in call.args[0] for call in request.call_args_list))
+
+
+class PullRequestSync(unittest.TestCase):
+    def test_cross_repo_closing_issue_does_not_update_same_number_locally(self):
+        event = '{"pull_request":{"node_id":"pr-id","number":8,"state":"open"}}'
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/my-app",
+                                      "GITHUB_EVENT_NAME": "pull_request",
+                                      "GITHUB_EVENT_PATH": "/tmp/event.json"}), \
+             patch("builtins.open", mock_open(read_data=event)), \
+             patch.object(project_sync, "project", return_value={"id": "board", "fields": {"nodes": []}}), \
+             patch.object(project_sync, "items", return_value=[]), \
+             patch.object(project_sync, "sync_item") as sync, \
+             patch.object(project_sync, "graphql", return_value={
+                 "node": {"closingIssuesReferences": {"nodes": [
+                     {"number": 8, "repository": {"nameWithOwner": "owner/other-app"}}
+                 ]}}
+             }), patch.object(project_sync.status, "api") as api:
+            project_sync.main()
+        sync.assert_called_once()
+        api.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
