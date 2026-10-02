@@ -13,7 +13,7 @@ Rules:
 <!-- AC-TABLE:START -->
 | ID | Feature | Criterion | Verify | Status | Journey |
 |---|---|---|---|---|---|
-| AC-000 | harness | Quality gate passes (build, lint, types, unit, integration, E2E) | `bash scripts/verify.sh` | done |
-| AC-001 | evaluator | Acceptance parser supports legacy tables and optional Journey cells | `python3 scripts/tests/test_check_acceptance.py` | done | |
-| AC-002 | evaluator | App run contract skips cleanly or reports unhealthy startup with log tail | `python3 scripts/tests/test_serve.py` | done | |
+| AC-000 | harness | Quality gate passes (build, lint, types, unit, integration, E2E) | `bash scripts/verify.sh` | done | |
+| AC-001 | harness | Acceptance parser supports legacy tables and optional Journey cells | `python3 scripts/tests/test_check_acceptance.py` | done | |
+| AC-002 | harness | App run contract skips cleanly or reports unhealthy startup with log tail | `python3 scripts/tests/test_serve.py` | done | |
 <!-- AC-TABLE:END -->
