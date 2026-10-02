@@ -1,0 +1,37 @@
+# The owner dashboard: one pinned "📊 Status" issue, rewritten in place.
+# Plain script, no LLM and no premium requests. Runs in seconds.
+name: status
+on:
+  push:
+    branches: [main]
+  issues:
+    types: [opened, closed, labeled, unlabeled, assigned]
+  pull_request:
+    types: [opened, closed]
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+permissions:
+  issues: write
+  contents: read
+  pull-requests: read
+concurrency:
+  group: status
+  cancel-in-progress: true
+jobs:
+  update:
+    # Never react to the Status issue updating itself. Fork PRs get a read-only
+    # token, so skip them rather than fail every time.
+    if: >-
+      (github.event_name != 'issues' || !contains(github.event.issue.labels.*.name, 'status')) &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update the pinned Status issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          FACTORY_PROJECT_NUMBER: ${{ vars.FACTORY_PROJECT_NUMBER }}
+        run: python3 scripts/status.py

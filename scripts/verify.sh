@@ -11,6 +11,13 @@ for a in "$@"; do case $a in --quick) QUICK=1; E2E=0;; --no-e2e) E2E=0;; --no-in
 step() { echo; echo "==> $*"; }
 ran=0
 
+# Harness self-tests (stdlib Python only, no deps, no network).
+for t in scripts/tests/test_*.py; do
+  [ -f "$t" ] || continue
+  step "harness self-test: $t"
+  python3 "$t"
+done
+
 if [ -f package.json ]; then
   ran=1
   if   [ -f pnpm-lock.yaml ]; then PM=pnpm; INST="pnpm install --frozen-lockfile"
